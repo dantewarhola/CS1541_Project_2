@@ -1,0 +1,10 @@
+#$ Tests BN
+
+88FF # LIS r0, 0xFF
+7000 # PUT r0
+A805 # BN r0, 5
+81AA # LIZ r1, 170
+7020 # PUT r1
+8155 # LIZ r1, 85
+7020 # PUT r1
+6800 # HALT

@@ -1,0 +1,10 @@
+#$ Tests BP
+
+8001 # LIZ r0, 1
+A004 # BP r0, 4
+81AA # LIZ r1, 170
+7020 # PUT r1
+8155 # LIZ r1, 85
+7020 # PUT r1
+6800 # HALT
+

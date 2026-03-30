@@ -1,0 +1,10 @@
+#$ Tests BZ
+
+8000 # LIZ r0, 0
+7000 # PUT r0
+B805 # BZ r0, 5
+81AA # LIZ r1, 170
+7020 # PUT r1
+8155 # LIZ r1, 85
+7020 # PUT r1
+6800 # HALT
