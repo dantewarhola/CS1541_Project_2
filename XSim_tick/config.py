@@ -10,11 +10,12 @@ parser.add_argument('--program',
                     action='store',
                     help='The program to run in the simulator')
 
-parser.add_argument('--latencies',
-                    dest="latencies",
+# I changed the name of the latencies file to configuration so the CL can parase the new file
+parser.add_argument('--configuration',
+                    dest="configuration",
                     required=True,
                     action='store',
-                    help='The json file with the instruction latencies')
+                    help='The json file with the simulation configuration')
 
 #$ added the parse for the output file 
 parser.add_argument('--output',
@@ -26,26 +27,22 @@ parser.add_argument('--output',
 # Parse arguments
 args = parser.parse_args()
 
+# Changed this print to show the new configuration file
 ## Print info ##
 print("Running simulator using program "+args.program)
-print("Latencies in  "+args.latencies)
+print("Configuration in  "+args.configuration)
 
+
+# Changed this JSON load to now load the config file instead of the latencies file
 #####################################
-#	Load JSON file with latencies	#
+#	Load JSON file with configuration	#
 #####################################
 import json
-with open(args.latencies, 'r') as inp_file:
-  latencies=json.load(inp_file)
-print("Latencies:")
-print(json.dumps(latencies, indent=2))
-# Latencies will look like
-# {
-#   "liz": 20,
-#   "sw": 150,
-#   "lw": 150,
-#   "put": 1000,
-#   "halt": 1,
-# }
+with open(args.configuration, 'r') as inp_file:
+  configuration=json.load(inp_file)
+print("Configuration:")
+print(json.dumps(configuration, indent=2))
+
 
 # Now the simulation
 import sst
@@ -60,7 +57,8 @@ core.addParams({
   "output": args.output
 })
 
-core.addParams(latencies)
+# changed this to add the configuration parameters to the core instead of the latencies
+core.addParams(configuration)
 # Configure the memory interface in our CPU to use the standard interface
 iface = core.setSubComponent("memory", "memHierarchy.standardInterface")
 #iface.addParams({"debug" : 1, "debug_level" : 10})

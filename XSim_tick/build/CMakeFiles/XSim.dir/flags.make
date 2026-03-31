@@ -4,7 +4,7 @@
 # compile CXX with /usr/bin/c++
 CXX_DEFINES = -DHAVE_CONFIG_H -DXSim_EXPORTS
 
-CXX_INCLUDES = -I/usr/include/jsoncpp -I/opt/sst/sst-core/include -I/opt/sst/sst-core/include/sst -I/usr/lib/x86_64-linux-gnu/openmpi/include -I/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi -I/home/dlw110/CS_1541/Project_1/XSim_tick/sst/include
+CXX_INCLUDES = -I/usr/include/jsoncpp -I/opt/sst/sst-core/include -I/opt/sst/sst-core/include/sst -I/usr/lib/x86_64-linux-gnu/openmpi/include -I/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi -I/home/dlw110/CS_1541/Project_2/XSim_tick/sst/include
 
 CXX_FLAGS = -g -std=c++23 -Wall -g -fPIC -Wl,-undefined -Wl,dynamic_lookup -fPIC -Wno-deprecated
 

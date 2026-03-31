@@ -1,7 +1,7 @@
 CMakeFiles/XSim.dir/sst/src/xsim_core/memory_wrapper.cpp.o: \
- /home/dlw110/CS_1541/Project_1/XSim_tick/sst/src/xsim_core/memory_wrapper.cpp \
+ /home/dlw110/CS_1541/Project_2/XSim_tick/sst/src/xsim_core/memory_wrapper.cpp \
  /usr/include/stdc-predef.h \
- /home/dlw110/CS_1541/Project_1/XSim_tick/sst/include/xsim_core/memory_wrapper.hpp \
+ /home/dlw110/CS_1541/Project_2/XSim_tick/sst/include/xsim_core/memory_wrapper.hpp \
  /opt/sst/sst-core/include/sst/core/interfaces/stdMem.h \
  /opt/sst/sst-core/include/sst/core/link.h \
  /opt/sst/sst-core/include/sst/core/event.h \

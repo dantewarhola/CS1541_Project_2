@@ -1,7 +1,7 @@
-/home/dlw110/CS_1541/Project_1/XSim_tick/build/CMakeFiles/XSim.dir
-/home/dlw110/CS_1541/Project_1/XSim_tick/build/CMakeFiles/edit_cache.dir
-/home/dlw110/CS_1541/Project_1/XSim_tick/build/CMakeFiles/rebuild_cache.dir
-/home/dlw110/CS_1541/Project_1/XSim_tick/build/CMakeFiles/list_install_components.dir
-/home/dlw110/CS_1541/Project_1/XSim_tick/build/CMakeFiles/install.dir
-/home/dlw110/CS_1541/Project_1/XSim_tick/build/CMakeFiles/install/local.dir
-/home/dlw110/CS_1541/Project_1/XSim_tick/build/CMakeFiles/install/strip.dir
+/home/dlw110/CS_1541/Project_2/XSim_tick/build/CMakeFiles/XSim.dir
+/home/dlw110/CS_1541/Project_2/XSim_tick/build/CMakeFiles/edit_cache.dir
+/home/dlw110/CS_1541/Project_2/XSim_tick/build/CMakeFiles/rebuild_cache.dir
+/home/dlw110/CS_1541/Project_2/XSim_tick/build/CMakeFiles/list_install_components.dir
+/home/dlw110/CS_1541/Project_2/XSim_tick/build/CMakeFiles/install.dir
+/home/dlw110/CS_1541/Project_2/XSim_tick/build/CMakeFiles/install/local.dir
+/home/dlw110/CS_1541/Project_2/XSim_tick/build/CMakeFiles/install/strip.dir
