@@ -38,13 +38,3 @@ TBD
 
 
 ## Known Problems / Bugs:
-
-- **Initial LUI Bug (FIXED):**
-    - Originally overwrote lower 8 bits with zeros instead of preserving them
-    - Fixed by combining upper immediate with existing lower register bits
-- **Register Reset Issue (FIXED):**
-    - Registers were not resetting between runs, causing incorrect outputs
-    - Fixed by adding reset loop for registers and stats so that after every run, all of the registers and stats reset
-- **Opcode Recognition Issue (FIXED):**
-    - Instructions initially not recognized due to missing names/latencies
-    - Fixed by adding all instruction names and default latencies
