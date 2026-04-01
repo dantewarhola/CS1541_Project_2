@@ -38,6 +38,7 @@ add_library(
 	SHARED
 
 	sst/include/xsim_core/opcodes.hpp
+	sst/include/xsim_core/tomasulo.hpp
 
 	sst/src/xsim_core/core.cpp
 	sst/include/xsim_core/core.hpp

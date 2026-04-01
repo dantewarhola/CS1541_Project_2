@@ -1,4 +1,4 @@
-# Install script for directory: /home/dlw110/CS_1541/Project_2/XSim_tick
+# Install script for directory: /home/tcd27/CS1541/Project_2/CS1541_Project_2/XSim_tick
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -49,7 +49,7 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
          FILE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libXSim.so"
          RPATH "")
   endif()
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE SHARED_LIBRARY FILES "/home/dlw110/CS_1541/Project_2/XSim_tick/build/libXSim.so")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE SHARED_LIBRARY FILES "/home/tcd27/CS1541/Project_2/CS1541_Project_2/XSim_tick/build/libXSim.so")
   if(EXISTS "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libXSim.so" AND
      NOT IS_SYMLINK "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libXSim.so")
     if(CMAKE_INSTALL_DO_STRIP)
@@ -62,7 +62,7 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  include("/home/dlw110/CS_1541/Project_2/XSim_tick/build/CMakeFiles/XSim.dir/install-cxx-module-bmi-Debug.cmake" OPTIONAL)
+  include("/home/tcd27/CS1541/Project_2/CS1541_Project_2/XSim_tick/build/CMakeFiles/XSim.dir/install-cxx-module-bmi-Debug.cmake" OPTIONAL)
 endif()
 
 if(CMAKE_INSTALL_COMPONENT)
@@ -73,5 +73,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/home/dlw110/CS_1541/Project_2/XSim_tick/build/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/home/tcd27/CS1541/Project_2/CS1541_Project_2/XSim_tick/build/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
