@@ -30,6 +30,26 @@ TBD
 - I tested my implementation and I was able to confirm that Phase 1 works and that --configuration works and is parsed correctly when the program is run
 
 
+## Phase 2: Data Structures & Core Skeleton
+* The spec requires data structures for reservation stations, functional units, register renaming, and an event system
+* Created a new file tomasulo.hpp to hold all the structs separate from core.hpp
+
+### 2.1 Define structs:
+* Created structs for ReservationStation, FunctionalUnit, RegisterStatus, Event, and TomasuloConfig
+* Added helper functions to map opcodes to their FU type and to extract source/destination registers from instructions
+
+### 2.2 Update core.hpp:
+* Replaced the old Project 1 in-order pipeline state with the new Tomasulo data structures
+* Added vectors for each RS pool, arrays for each FU type, a register alias table, and an event queue
+
+### 2.3 Update core.cpp:
+* Added load_configuration() to read the FU counts, RS counts, and latencies from the JSON config
+* Allocates all RS pools and FU arrays based on the config values
+* setup() prints everything so we can verify sizes match the config
+
+### 2.4 Test:
+* Built and ran with configuration.json, confirmed all values printed in setup() match the config file
+* Confirmed the instruction trace loads and decodes correctly
 
 # Part 2: Tests & Bugs:
 
