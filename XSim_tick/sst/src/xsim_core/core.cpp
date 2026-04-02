@@ -178,15 +178,110 @@ void Core::load_program(Params &params)
 	}
 }
 
-bool Core::tick(Cycle_t cycle)
-{
-	// TODO: Implement Tomasulo pipeline stages (Phase 4+)
-	if (current_cycle == 0) {
-		std::cout << "tick() called - pipeline not yet implemented" << std::endl;
+
+
+
+
+
+bool Core::tick(Cycle_t cycle){
+
+	current_cycle = cycle;
+
+
+	// This if statement checks if there are still instructions left in the trace array to issue
+	if(next_issue_index < (int)program.size()) {
+		uint16_t instruction = program[next_issue_index];
+        uint16_t opcode = instruction >> 11;
+        FUType fu_type = opcode_to_fu_type(opcode);
+
+
+		// Start by assuming no free reservation station was found
+		int found_rs_index = -1;
+
+
+		// Each if block checks to see if there is a free reservation station for the instruction to be issued to
+		// and if so, it sets the found_rs_index variable to the index of that reservation station. 
+
+
+		if (fu_type == FUType::INTEGER){
+			for (int i = 0; i < (int)integer_rs.size(); i++){
+				if (!integer_rs[i].busy){
+					found_rs_index = int_rs_offset + i;
+					// Mark the RS busy and fill in the fields
+					integer_rs[i].busy = true;
+					integer_rs[i].instr_index = next_issue_index;
+					integer_rs[i].opcode = opcode;
+					integer_rs[i].fu_type = fu_type;
+					integer_rs[i].dest_reg = get_dest_reg(instruction, opcode);
+					break;
+				}
+			}
+		}
+		else if (fu_type == FUType::DIVIDER){
+			for (int i = 0; i < (int)divider_rs.size(); i++){
+				if (!divider_rs[i].busy){
+					found_rs_index = div_rs_offset + i;
+					// Mark the RS busy and fill in the fields
+					divider_rs[i].busy = true;
+					divider_rs[i].instr_index = next_issue_index;
+					divider_rs[i].opcode = opcode;
+					divider_rs[i].fu_type = fu_type;
+					divider_rs[i].dest_reg = get_dest_reg(instruction, opcode);
+					break;
+				}
+			}
+		}
+		else if (fu_type == FUType::MULTIPLIER){
+			for (int i = 0; i < (int)multiplier_rs.size(); i++){
+				if (!multiplier_rs[i].busy){
+					found_rs_index = mul_rs_offset + i;
+					// Mark the RS busy and fill in the fields
+					multiplier_rs[i].busy = true;
+					multiplier_rs[i].instr_index = next_issue_index;
+					multiplier_rs[i].opcode = opcode;
+					multiplier_rs[i].fu_type = fu_type;
+					multiplier_rs[i].dest_reg = get_dest_reg(instruction, opcode);
+					break;
+				}
+			}
+		}
+		else if (fu_type == FUType::LOAD_STORE){
+			if ((int)ls_rs.size() < config.ls_rs){
+				ReservationStation new_rs;
+				new_rs.busy = true;
+				new_rs.instr_index = next_issue_index;
+				new_rs.opcode = opcode;
+				new_rs.fu_type = fu_type;
+				new_rs.dest_reg = get_dest_reg(instruction, opcode);
+				ls_rs.push_back(new_rs);
+				found_rs_index = ls_rs_offset + (int)ls_rs.size() - 1;
+			}
+		}
+		// If a free RS was found, schedule a READ_OPERAND event
+		if (found_rs_index != -1){
+			// Schedule a READ_OPERAND event for the next cycle
+			Event next_event;
+			next_event.timestamp = current_cycle + 1;
+			next_event.stage = Stage::READ_OPERAND;
+			next_event.rs_index = found_rs_index;
+			event_queue.push(next_event);
+
+			// Move to the next instruction
+			next_issue_index++;
+		}
+		// If no free RS was found, the pipeline stalls
+		else{
+			total_stalls++;
+		}
+	}
+
+	// If all instructions have been issued and there are no more events to process then end the simulation
+	if (next_issue_index >= (int)program.size() && event_queue.empty())
+	{
 		primaryComponentOKToEndSim();
 		terminate = true;
 	}
-	current_cycle++;
+
 	return terminate;
 }
 
