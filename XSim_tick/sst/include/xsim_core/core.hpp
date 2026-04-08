@@ -110,6 +110,12 @@ class Core: public SST::Component
 		//Helper function to handle the Write Result stage (broadcast, free RS and FU)
 		void handle_write_result(int global_rs_index);
 
+		//Handles L/S Read Operand: FIFO dispatch, address computation, memory request
+		void handle_ls_read_operand(int global_rs_index);
+
+		//Handles the memory response callback for L/S operations
+		void handle_memory_response(int global_rs_index);
+
 	private:
 		int verbose{0};
 		std::string clock_frequency{"0Hz"};
@@ -157,6 +163,9 @@ class Core: public SST::Component
 		uint64_t current_cycle{0};
 		bool terminate{false};
 		bool memory_pending{false};
+
+		// Tracks the global RS index of the L/S instruction waiting on memory
+		int memory_pending_rs{-1};
 
 		// Stats
 		uint64_t total_stalls{0};

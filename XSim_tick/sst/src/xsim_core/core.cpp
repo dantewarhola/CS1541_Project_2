@@ -325,7 +325,14 @@ bool Core::tick(Cycle_t cycle){
 
 		//Dispatch the event to the correct handler based on its stage
 		if (current_event.stage == Stage::READ_OPERAND){
-			handle_read_operand(current_event.rs_index);
+			// Route L/S instructions to the FIFO handler
+			ReservationStation* rs = get_rs_by_global_index(current_event.rs_index);
+			if (rs->fu_type == FUType::LOAD_STORE){
+				handle_ls_read_operand(current_event.rs_index);
+			}
+			else{
+				handle_read_operand(current_event.rs_index);
+			}
 		}
 		else if (current_event.stage == Stage::EXECUTE){
 			handle_execute(current_event.rs_index);
@@ -333,10 +340,13 @@ bool Core::tick(Cycle_t cycle){
 		else if (current_event.stage == Stage::WRITE_RESULT){
 			handle_write_result(current_event.rs_index);
 		}
+		else if (current_event.stage == Stage::MEMORY_PENDING){
+			handle_memory_response(current_event.rs_index);
+		}
 	}
 
 	// If all instructions have been issued and there are no more events to process then end the simulation
-	if (next_issue_index >= (int)program.size() && event_queue.empty()){
+	if (next_issue_index >= (int)program.size() && event_queue.empty() && !memory_pending){
 		primaryComponentOKToEndSim();
 		terminate = true;
 	}
@@ -539,8 +549,107 @@ void Core::handle_read_operand(int global_rs_index){
 }
 
 
+//Handles L/S Read Operand: only the head of the FIFO can dispatch
+void Core::handle_ls_read_operand(int global_rs_index){
+
+    if (ls_rs.empty()){
+        std::cerr << "Error: handle_ls_read_operand called but L/S queue is empty" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    // Only the head of the FIFO can dispatch
+    int head_global_index = ls_rs_offset;
+    if (global_rs_index != head_global_index){
+        // Not at the head, wait
+        Event wait_event;
+        wait_event.timestamp = current_cycle + 1;
+        wait_event.stage = Stage::READ_OPERAND;
+        wait_event.rs_index = global_rs_index;
+        event_queue.push(wait_event);
+        return;
+    }
+
+    ReservationStation& head_rs = ls_rs.front();
+
+    // Check if operands are ready
+    if (head_rs.Qj != -1 || head_rs.Qk != -1){
+        Event wait_event;
+        wait_event.timestamp = current_cycle + 1;
+        wait_event.stage = Stage::READ_OPERAND;
+        wait_event.rs_index = global_rs_index;
+        event_queue.push(wait_event);
+        return;
+    }
+
+    // Check if L/S FU is free and no memory operation is pending
+    if (ls_fu.busy || memory_pending){
+        Event wait_event;
+        wait_event.timestamp = current_cycle + 1;
+        wait_event.stage = Stage::READ_OPERAND;
+        wait_event.rs_index = global_rs_index;
+        event_queue.push(wait_event);
+        return;
+    }
+
+    // Dispatch to L/S FU: compute effective address
+    ls_fu.busy = true;
+    ls_fu.rs_index = global_rs_index;
+    head_rs.assigned_fu = 0;
+    head_rs.address = head_rs.Vj; // effective address = base register value
+
+    // Schedule execute completion after address computation latency
+    int addr_latency = get_latency_for_type(FUType::LOAD_STORE);
+    ls_fu.finish_cycle = current_cycle + addr_latency;
+    Event execute_event;
+    execute_event.timestamp = current_cycle + addr_latency;
+    execute_event.stage = Stage::EXECUTE;
+    execute_event.rs_index = global_rs_index;
+    event_queue.push(execute_event);
+}
+
+
 //Processes the Execute stage for an instruction
 void Core::handle_execute(int global_rs_index){
+
+    ReservationStation* current_rs = get_rs_by_global_index(global_rs_index);
+
+    // For L/S instructions, send the memory request instead of going to WriteResult
+    if (current_rs->fu_type == FUType::LOAD_STORE){
+        memory_pending = true;
+        memory_pending_rs = global_rs_index;
+
+        if (current_rs->opcode == LW){
+            memory_wrapper->read(current_rs->address, [this, global_rs_index](uint16_t addr, uint16_t data){
+                // Store the loaded value so WriteResult can broadcast it
+                ReservationStation* rs = get_rs_by_global_index(global_rs_index);
+                rs->Vk = data; // stash loaded value in Vk
+
+                // Schedule a WRITE_RESULT event for the next cycle
+                Event wr_event;
+                wr_event.timestamp = current_cycle + 1;
+                wr_event.stage = Stage::WRITE_RESULT;
+                wr_event.rs_index = global_rs_index;
+                event_queue.push(wr_event);
+
+                memory_pending = false;
+                memory_pending_rs = -1;
+            });
+        }
+        else if (current_rs->opcode == SW){
+            memory_wrapper->write(current_rs->address, current_rs->Vk, [this, global_rs_index](uint16_t addr){
+                // SW has no broadcast, but still needs to free the RS and FU
+                Event wr_event;
+                wr_event.timestamp = current_cycle + 1;
+                wr_event.stage = Stage::WRITE_RESULT;
+                wr_event.rs_index = global_rs_index;
+                event_queue.push(wr_event);
+
+                memory_pending = false;
+                memory_pending_rs = -1;
+            });
+        }
+        return;
+    }
 
     //Schedule a WRITE_RESULT event for the next cycle
     Event write_result_event;
@@ -548,6 +657,13 @@ void Core::handle_execute(int global_rs_index){
     write_result_event.stage = Stage::WRITE_RESULT;
     write_result_event.rs_index = global_rs_index;
     event_queue.push(write_result_event);
+}
+
+
+//Handles the memory response for L/S (unused now since callbacks handle it, kept for future use)
+void Core::handle_memory_response(int global_rs_index){
+    // Memory responses are handled via callbacks in handle_execute
+    // This is a placeholder in case we need event-based memory handling later
 }
 
 
@@ -609,8 +725,61 @@ void Core::handle_write_result(int global_rs_index){
         ls_fu.instructions_executed++;
     }
 
-    // Free the RS
-    current_rs->clear();
+    // Free the RS: for L/S pop from the front of the FIFO
+    if (current_rs->fu_type == FUType::LOAD_STORE){
+        if (!ls_rs.empty()){
+            ls_rs.pop_front();
+            // After popping, all remaining L/S RS global indices shift down by 1
+            // We need to update any events in the queue and reg_status tags that reference L/S RS indices
+            // However since we always only dispatch the head (index ls_rs_offset), and we pop the head,
+            // the new head is now at ls_rs_offset again. Any other L/S entries in the queue
+            // have their global index reduced by 1.
+            // We need to fix up tags in reg_status and Qj/Qk in all RS pools.
+            for (int i = 0; i < 8; i++){
+                if (reg_status[i].tag > ls_rs_offset && reg_status[i].tag < ls_rs_offset + (int)ls_rs.size() + 1){
+                    reg_status[i].tag--;
+                }
+            }
+            for (auto &rs : integer_rs){
+                if (rs.busy){
+                    if (rs.Qj > ls_rs_offset && rs.Qj < ls_rs_offset + (int)ls_rs.size() + 1) rs.Qj--;
+                    if (rs.Qk > ls_rs_offset && rs.Qk < ls_rs_offset + (int)ls_rs.size() + 1) rs.Qk--;
+                }
+            }
+            for (auto &rs : divider_rs){
+                if (rs.busy){
+                    if (rs.Qj > ls_rs_offset && rs.Qj < ls_rs_offset + (int)ls_rs.size() + 1) rs.Qj--;
+                    if (rs.Qk > ls_rs_offset && rs.Qk < ls_rs_offset + (int)ls_rs.size() + 1) rs.Qk--;
+                }
+            }
+            for (auto &rs : multiplier_rs){
+                if (rs.busy){
+                    if (rs.Qj > ls_rs_offset && rs.Qj < ls_rs_offset + (int)ls_rs.size() + 1) rs.Qj--;
+                    if (rs.Qk > ls_rs_offset && rs.Qk < ls_rs_offset + (int)ls_rs.size() + 1) rs.Qk--;
+                }
+            }
+            for (auto &rs : ls_rs){
+                if (rs.busy){
+                    if (rs.Qj > ls_rs_offset && rs.Qj < ls_rs_offset + (int)ls_rs.size() + 1) rs.Qj--;
+                    if (rs.Qk > ls_rs_offset && rs.Qk < ls_rs_offset + (int)ls_rs.size() + 1) rs.Qk--;
+                }
+            }
+            // Also need to rebuild the event queue to fix L/S RS indices
+            std::priority_queue<Event, std::vector<Event>, std::greater<Event>> new_queue;
+            while (!event_queue.empty()){
+                Event e = event_queue.top();
+                event_queue.pop();
+                if (e.rs_index > ls_rs_offset && e.rs_index < ls_rs_offset + (int)ls_rs.size() + 1){
+                    e.rs_index--;
+                }
+                new_queue.push(e);
+            }
+            event_queue = new_queue;
+        }
+    }
+    else{
+        current_rs->clear();
+    }
 }
 
 
