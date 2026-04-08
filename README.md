@@ -92,6 +92,78 @@ TBD
 - I created two test traces to test the issue stage
 - phase_4_1.m had 4 instructions which is less than the 4 integer RSs available, confirmed that all 4 instructions issued one per cycle with no stalls and the simulation ended cleanly with Total cycles: 4 and Total stalls: 0
 - phase_4_2.m had 6 instructions with 5 LIZ instructions to overflow the 4 integer RSs, confirmed that the first 4 instructions issued fine and the 5th instruction stalled every cycle because the RSs never freed up since execute is not yet implemented, Total stalls confirmed to be incrementing correctly
+
+## Phase 5: Implement Read Operand
+
+### 5.1 Add issue_order to reservation station:
+
+- Inside of tomasulo.hpp I added int issue_order{-1} to ReservationStation so each instruction can be stamped with the order it was issued
+- I also added issue_order = -1 to the clear() method so the field resets when an RS slot is freed
+
+### 5.2 Implement the 3 lookup helpers:
+
+- Added declarations for get_rs_by_global_index, get_fus_for_type, and get_latency_for_type to the protected section of core.hpp
+- Implemented get_rs_by_global_index in core.cpp which takes a global RS index and returns a pointer to that RS entry
+- Implemented get_fus_for_type in core.cpp which takes a FU type and returns the vector of FUs of that type
+- Implemented get_latency_for_type in core.cpp which takes a FU type and returns how many cycles that FU type takes to execute
+
+### 5.3 Implement can_dispatch_oldest:
+
+- Added the declaration for can_dispatch_oldest to the protected section of core.hpp
+- Implemented can_dispatch_oldest in core.cpp which scans all RS entries in the same FU pool and checks if any other RS is busy, has all operands ready, and has a lower issue_order than the current instruction
+- If an older ready instruction is found it returns false meaning the current instruction cannot dispatch yet
+- If no older ready instruction is found it returns true meaning the current instruction is the oldest and can proceed
+
+### 5.4 Implement handle_read_operand:
+
+- Added the declaration for handle_read_operand to the protected section of core.hpp
+- Implemented handle_read_operand in core.cpp which is the main handler for the Read Operand stage
+- The first thing it does is check if Qj or Qk are not -1, if either is still waiting on a tag the operands are not ready so it reschedules a READ_OPERAND event for the next cycle and returns
+- If the operands are ready it then calls can_dispatch_oldest to make sure no older instruction is waiting for the same FU type, if there is it reschedules for the next cycle and returns
+- If this instruction is the oldest ready one it searches the correct FU pool for a free unit, if none is found it increments total_stalls, reschedules for the next cycle, and returns
+- If a free FU is found it marks it busy, records which FU was assigned on the RS, calculates when it will finish executing, and pushes an EXECUTE event at that cycle
+
+### 5.5 Link READ_OPERAND into tick:
+
+- I added an event queue drain loop inside tick() that runs every cycle before the termination check
+- The loop checks if the event at the top of the queue has a timestamp matching the current cycle, if so it pops it off and dispatches it to the correct handler
+- Added a check for READ_OPERAND events that calls handle_read_operand with the rs_index from the event
+- Left EXECUTE and WRITE_RESULT as empty stubs with TODO comments since those stages are not implemented yet
+
+### 5.6 Set issue_order during issue:
+
+- Added issue_order = next_issue_index to all four FU type blocks in the Issue stage inside tick()
+- This was added to the INTEGER, DIVIDER, MULTIPLIER, and LOAD_STORE blocks right after the other RS fields are filled in
+
+### 5.7 register renaming:
+
+- Added register renaming logic to the Issue stage inside tick() right after a free RS is found
+- Called get_source_regs() to get the source registers for the instruction
+- For each source register checked reg_status to see if the value is ready or if another instruction is still producing it
+- If the tag is -1 the value is ready so I copied it into Vj or Vk and incremented total_reg_reads
+- If the tag is not -1 a previous instruction is still producing that value so I copied the tag into Qj or Qk instead so the instruction knows to wait
+- After handling source registers I updated reg_status for the destination register to point to this RS so future instructions that read this register will know to wait on it
+
+## Phase 6: Implementing the Execution Stage
+
+### 6.1 Implement handle_execute:
+
+- Added the declaration for handle_execute to the protected section of core.hpp
+- Implemented handle_execute in core.cpp which takes a global RS index and schedules a WRITE_RESULT event for the next cycle
+
+### 6.2 Add to tick():
+
+- Added handle_execute(current_event.rs_index); to tick() where the TODO is for the execute stage
+
+### 6.3 Test:
+
+- Wrote a two instruction trace with two independent LIZ instructions and ran the simulator
+- Confirmed RS 0 dispatched to Execute on cycle 2 and scheduled Write Result on cycle 3
+- Confirmed RS 1 dispatched to Execute on cycle 3 and scheduled Write Result on cycle 4
+- Confirmed the simulation ended cleanly at cycle 5 with no hanging
+- Had to fix a bug in can_dispatch_oldest where it was not skipping RS entries that had already been dispatched to a FU
+
+
 # Part 2: Tests & Bugs:
 
 
