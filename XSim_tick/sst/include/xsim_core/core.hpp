@@ -74,7 +74,6 @@ class Core: public SST::Component
 		using TimeConverter = ::SST::TimeConverter;
 
 	public:
-		/** These functions are defined by SST **/
 		Core(ComponentId_t id, Params& params);
 		virtual void init(unsigned int phase) override final;
 		virtual void setup() override final;
@@ -82,7 +81,6 @@ class Core: public SST::Component
 		bool tick(Cycle_t cycle);
 
 	private:
-		/** For completeness **/
 		Core();
 		Core(const Core& params);
 		Core operator=(const Core& params);
@@ -92,28 +90,15 @@ class Core: public SST::Component
 		void load_program(Params &params);
 		void load_configuration(Params &params);
 
-
-		//Helper functions used by the Read Operand stage to look up RS entries, FU pools, and latencies
 		ReservationStation* get_rs_by_global_index(int global_rs_index);
-		std::vector<FunctionalUnit>& get_fus_for_type(FUType functional_unit_type);
-		int get_latency_for_type(FUType functional_unit_type);
+		std::vector<FunctionalUnit>& get_fus_for_type(FUType fu_type);
+		int get_latency_for_type(FUType fu_type);
+		bool can_dispatch_oldest(int global_rs_index, FUType fu_type);
 
-		//Helper function to check if the oldest instruction in a given RS can be dispatched to a FU
-		bool can_dispatch_oldest(int global_rs_index, FUType functional_unit_type);
-
-		//Helper function to handle the logic of reading an operand 
 		void handle_read_operand(int global_rs_index);
-
-		//Helper function to handle the logic of executing an instruction
-		void handle_execute(int global_rs_index);
-
-		//Helper function to handle the Write Result stage (broadcast, free RS and FU)
-		void handle_write_result(int global_rs_index);
-
-		//Handles L/S Read Operand: FIFO dispatch, address computation, memory request
 		void handle_ls_read_operand(int global_rs_index);
-
-		//Handles the memory response callback for L/S operations
+		void handle_execute(int global_rs_index);
+		void handle_write_result(int global_rs_index);
 		void handle_memory_response(int global_rs_index);
 
 	private:
@@ -126,52 +111,40 @@ class Core: public SST::Component
 		Statistics<uint64_t> *instruction_count;
 		TimeConverter* tc{nullptr};
 
-		// Instruction trace
 		std::vector<uint16_t> program;
 
-		// Tomasulo config
 		TomasuloConfig config;
 
-		// Reservation stations
 		std::vector<ReservationStation> integer_rs;
 		std::vector<ReservationStation> divider_rs;
 		std::vector<ReservationStation> multiplier_rs;
-		std::deque<ReservationStation> ls_rs; // FIFO queue
+		std::deque<ReservationStation> ls_rs;
 
-		// Global RS index offsets for unique tagging
 		int int_rs_offset{0};
 		int div_rs_offset{0};
 		int mul_rs_offset{0};
 		int ls_rs_offset{0};
 		int total_rs_count{0};
 
-		// Functional units
 		std::vector<FunctionalUnit> integer_fus;
 		std::vector<FunctionalUnit> divider_fus;
 		std::vector<FunctionalUnit> multiplier_fus;
 		FunctionalUnit ls_fu;
 
-		// Register file + alias table
 		std::array<uint16_t, 8> registers;
 		std::array<RegisterStatus, 8> reg_status;
 
-		// Event list
 		std::priority_queue<Event, std::vector<Event>, std::greater<Event>> event_queue;
 
-		// Pipeline state
 		int next_issue_index{0};
 		uint64_t current_cycle{0};
 		bool terminate{false};
 		bool memory_pending{false};
-
-		// Tracks the global RS index of the L/S instruction waiting on memory
 		int memory_pending_rs{-1};
 
-		// Stats
 		uint64_t total_stalls{0};
 		uint64_t total_reg_reads{0};
 
-		// Instruction names for debug
 		std::map<uint32_t, std::string> names;
 };
 

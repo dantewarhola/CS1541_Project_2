@@ -51,26 +51,37 @@ import sst
 #$ Had to pass the output to the core 
 core = sst.Component("XSim","XSim.Core")
 core.addParams({
-  "clock_frequency": "3GHz",
+  "clock_frequency": configuration.get("clock", "1GHz"),
   "program": args.program,
   "verbose": 0,
   "output": args.output
 })
 
-
-
-
-
 # changed this to add the configuration parameters to the core instead of the latencies
 core.addParams(configuration)
 # Configure the memory interface in our CPU to use the standard interface
 iface = core.setSubComponent("memory", "memHierarchy.standardInterface")
-#iface.addParams({"debug" : 1, "debug_level" : 10})
+
+
+#$ Read cache settings from the configuration JSON
+cache_assoc = configuration.get("cache", {}).get("associativity", 1)
+cache_size = configuration.get("cache", {}).get("size", "4096B")
+clock_freq = configuration.get("clock", "1GHz")
+
+#$ L1 data cache between CPU and memory
+cache = sst.Component("l1_cache", "memHierarchy.Cache")
+cache.addParams({
+	"cache_frequency":	clock_freq,
+	"cache_size":		cache_size,
+	"associativity":	cache_assoc,
+	"cache_line_size":	16,
+	"access_latency_cycles": 1,
+	"L1":			True,
+	"replacement_policy": "lru"
+})
 
 
 # Now we add the memory to the simulation
-# In this case we're using a simple memory controller (the memory frontend)
-# This will map RAM from memory add_range_start (0) to add_range_end (64KiB)
 memory = sst.Component("data_memory", "memHierarchy.MemController")
 memory.addParams(
 {
@@ -79,21 +90,24 @@ memory.addParams(
 	"addr_range_end":	64*1024-1,
 })
 
-# Memory access timing model we attach it to the memory backend
-#	- this does the specifics of the memory simulation
-## SimpleMem has a constant access latency for all accesses
-## 64KiB memory with 1000ns access latency
+# Memory access timing model
 memory_timing = memory.setSubComponent("backend", "memHierarchy.simpleMem")
 memory_timing.addParams({
 	"access_time" : "1000ns",
 	"mem_size" : "64KiB"
 })
 
-# Now we need to connect the two components together, the link has a latency
-#	and can be assimetric (it's not in this case)
-cpu_data_memory_link = sst.Link("cpu_data_memory_link")
-cpu_data_memory_link.connect(
+#$ Link CPU to L1 cache
+cpu_cache_link = sst.Link("cpu_cache_link")
+cpu_cache_link.connect(
 	(iface,		"lowlink",	"500ps"),
+	(cache,		"highlink",	"500ps")
+)
+
+#$ Link L1 cache to memory
+cache_memory_link = sst.Link("cache_memory_link")
+cache_memory_link.connect(
+	(cache,		"lowlink",	"500ps"),
 	(memory,	"highlink",	"500ps")
 )
 
@@ -101,5 +115,3 @@ cpu_data_memory_link.connect(
 sst.setStatisticLoadLevel(7)
 sst.setStatisticOutput("sst.statOutputConsole")
 sst.enableAllStatisticsForAllComponents()
-
-

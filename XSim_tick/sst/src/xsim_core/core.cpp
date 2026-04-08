@@ -40,21 +40,16 @@ Core::Core(ComponentId_t id, Params& params):
 		{BZ, "bz"}, {J, "j"}
 	};
 
-	// Create the SST output with the required verbosity level
 	output = new Output("tomsim[@t:@l]: ", verbose, 0, Output::STDOUT);
 
-	// Create a tick function with the frequency specified
 	tc = Super::registerClock(clock_frequency, new Clock::Handler2<Core, &Core::tick>(this));
 
 	output->verbose(CALL_INFO, 1, 0, "Configuring connection to memory...\n");
-	// memory_wrapper is used to make write/read requests to the SST simulated memory
 	memory_wrapper = loadComponentExtension<MemoryWrapper>(params, output, tc);
 	output->verbose(CALL_INFO, 1, 0, "Configuration of memory interface completed.\n");
 
-	// SST statistics
 	instruction_count = registerStatistic<uint64_t>("instructions");
 
-	// tell the simulator not to end without us
 	registerAsPrimaryComponent();
 	primaryComponentDoNotEndSim();
 }
@@ -77,14 +72,13 @@ void Core::load_configuration(Params &params)
 	config.ls_rs      = params.find<int>("ls.resnumber", 8);
 	config.ls_latency = params.find<int>("ls.latency", 3);
 
-	// Global RS index offsets for unique tagging
+	// set up the global RS index offsets so every RS has a unique tag
 	int_rs_offset = 0;
 	div_rs_offset = config.integer_rs;
 	mul_rs_offset = div_rs_offset + config.divider_rs;
 	ls_rs_offset  = mul_rs_offset + config.multiplier_rs;
 	total_rs_count = ls_rs_offset + config.ls_rs;
 
-	// Allocate reservation stations
 	integer_rs.resize(config.integer_rs);
 	for (auto &rs : integer_rs) rs.clear();
 
@@ -96,7 +90,6 @@ void Core::load_configuration(Params &params)
 
 	ls_rs.clear();
 
-	// Allocate functional units
 	integer_fus.resize(config.integer_num);
 	for (auto &fu : integer_fus) { fu.type = FUType::INTEGER; fu.clear(); }
 
@@ -180,33 +173,23 @@ void Core::load_program(Params &params)
 
 
 
-
-
-
 bool Core::tick(Cycle_t cycle){
 	current_cycle = cycle;
 
-
-	// This if statement checks if there are still instructions left in the trace array to issue
+	// === ISSUE STAGE ===
+	// try to issue the next instruction if there are any left
 	if(next_issue_index < (int)program.size()){
 		uint16_t instruction = program[next_issue_index];
         uint16_t opcode = instruction >> 11;
         FUType fu_type = opcode_to_fu_type(opcode);
 
-
-		// Start by assuming no free reservation station was found
 		int found_rs_index = -1;
 
-
-		// Each if block checks to see if there is a free reservation station for the instruction to be issued to
-		// and if so, it sets the found_rs_index variable to the index of that reservation station. 
-
-
+		// find a free RS in the right pool and fill it in
 		if (fu_type == FUType::INTEGER){
 			for (int i = 0; i < (int)integer_rs.size(); i++){
 				if (!integer_rs[i].busy){
 					found_rs_index = int_rs_offset + i;
-					// Mark the RS busy and fill in the fields
 					integer_rs[i].busy = true;
 					integer_rs[i].instr_index = next_issue_index;
 					integer_rs[i].opcode = opcode;
@@ -221,7 +204,6 @@ bool Core::tick(Cycle_t cycle){
 			for (int i = 0; i < (int)divider_rs.size(); i++){
 				if (!divider_rs[i].busy){
 					found_rs_index = div_rs_offset + i;
-					// Mark the RS busy and fill in the fields
 					divider_rs[i].busy = true;
 					divider_rs[i].instr_index = next_issue_index;
 					divider_rs[i].opcode = opcode;
@@ -236,7 +218,6 @@ bool Core::tick(Cycle_t cycle){
 			for (int i = 0; i < (int)multiplier_rs.size(); i++){
 				if (!multiplier_rs[i].busy){
 					found_rs_index = mul_rs_offset + i;
-					// Mark the RS busy and fill in the fields
 					multiplier_rs[i].busy = true;
 					multiplier_rs[i].instr_index = next_issue_index;
 					multiplier_rs[i].opcode = opcode;
@@ -261,71 +242,57 @@ bool Core::tick(Cycle_t cycle){
 			}
 		}
 
-		//If a free RS was found, schedule a READ_OPERAND event
 		if (found_rs_index != -1){
-
-			//Get the RS entry and source registers for this instruction
+			// register renaming: check source operands
 			ReservationStation* current_rs = get_rs_by_global_index(found_rs_index);
 			SourceRegs source_regs = get_source_regs(instruction, opcode);
 
-
-			//Check if source register Qj is ready or waiting on a tag
 			if (source_regs.rs != -1){
 				if (reg_status.at(source_regs.rs).tag == -1){
-					current_rs->Vj = registers.at(source_regs.rs); 
-					total_reg_reads++;                              
+					current_rs->Vj = registers.at(source_regs.rs);
+					total_reg_reads++;
 				}
 				else{
-					current_rs->Qj = reg_status.at(source_regs.rs).tag; 
+					current_rs->Qj = reg_status.at(source_regs.rs).tag;
 				}
 			}
 
-
-			//Check if source register Qk is ready or waiting on a tag
 			if (source_regs.rt != -1){
 				if (reg_status.at(source_regs.rt).tag == -1){
-					current_rs->Vk = registers.at(source_regs.rt); 
-					total_reg_reads++;                              
+					current_rs->Vk = registers.at(source_regs.rt);
+					total_reg_reads++;
 				}
 				else{
-					current_rs->Qk = reg_status.at(source_regs.rt).tag; 
+					current_rs->Qk = reg_status.at(source_regs.rt).tag;
 				}
 			}
 
-			//If this instruction writes a destination register update reg_status to point to this RS
+			// update the register alias table for the destination
 			if (current_rs->dest_reg != -1){
 				reg_status.at(current_rs->dest_reg).tag = found_rs_index;
 			}
 
-			//Schedule a READ_OPERAND event for the next cycle
+			// schedule read operand for next cycle
 			Event next_event;
 			next_event.timestamp = current_cycle + 1;
 			next_event.stage = Stage::READ_OPERAND;
 			next_event.rs_index = found_rs_index;
 			event_queue.push(next_event);
 
-			// Move to the next instruction
 			next_issue_index++;
 		}
-		// If no free RS was found, the pipeline stalls
 		else{
 			total_stalls++;
 		}
-
-
-
 	}
 
-	//Process all events that are scheduled to happen on this cycle
+	// === EVENT PROCESSING ===
+	// drain all events scheduled for this cycle
 	while (!event_queue.empty() && event_queue.top().timestamp == current_cycle){
-
-		//Pop the event off the queue
 		Event current_event = event_queue.top();
 		event_queue.pop();
 
-		//Dispatch the event to the correct handler based on its stage
 		if (current_event.stage == Stage::READ_OPERAND){
-			// Route L/S instructions to the FIFO handler
 			ReservationStation* rs = get_rs_by_global_index(current_event.rs_index);
 			if (rs->fu_type == FUType::LOAD_STORE){
 				handle_ls_read_operand(current_event.rs_index);
@@ -345,7 +312,7 @@ bool Core::tick(Cycle_t cycle){
 		}
 	}
 
-	// If all instructions have been issued and there are no more events to process then end the simulation
+	// end simulation when everything is done
 	if (next_issue_index >= (int)program.size() && event_queue.empty() && !memory_pending){
 		primaryComponentOKToEndSim();
 		terminate = true;
@@ -355,19 +322,15 @@ bool Core::tick(Cycle_t cycle){
 }
 
 
-// Helper function that takes a global RS index and returns a pointer to the actual RS entry in the right pool
 ReservationStation* Core::get_rs_by_global_index(int global_rs_index){
     if (global_rs_index >= int_rs_offset && global_rs_index < div_rs_offset){
-        int local_index = global_rs_index - int_rs_offset;
-        return &integer_rs.at(local_index);
+        return &integer_rs.at(global_rs_index - int_rs_offset);
     }
     else if (global_rs_index >= div_rs_offset && global_rs_index < mul_rs_offset){
-        int local_index = global_rs_index - div_rs_offset;
-        return &divider_rs.at(local_index);
+        return &divider_rs.at(global_rs_index - div_rs_offset);
     }
     else if (global_rs_index >= mul_rs_offset && global_rs_index < ls_rs_offset){
-        int local_index = global_rs_index - mul_rs_offset;
-        return &multiplier_rs.at(local_index);
+        return &multiplier_rs.at(global_rs_index - mul_rs_offset);
     }
     else if (global_rs_index >= ls_rs_offset && global_rs_index < total_rs_count){
         int local_index = global_rs_index - ls_rs_offset;
@@ -384,265 +347,211 @@ ReservationStation* Core::get_rs_by_global_index(int global_rs_index){
 }
 
 
-// Helper function that takes a FU type and returns the vector of FUs of that type
-std::vector<FunctionalUnit>& Core::get_fus_for_type(FUType functional_unit_type){
-    if (functional_unit_type == FUType::DIVIDER){
-        return divider_fus;
-    }
-    else if (functional_unit_type == FUType::MULTIPLIER){
-        return multiplier_fus;
-    }
-    else{
-        return integer_fus;
-    }
+std::vector<FunctionalUnit>& Core::get_fus_for_type(FUType fu_type){
+    if (fu_type == FUType::DIVIDER) return divider_fus;
+    else if (fu_type == FUType::MULTIPLIER) return multiplier_fus;
+    else return integer_fus;
 }
 
 
-//Helper function that takes a FU type looks how many cycles that FU type takes to execute 
-int Core::get_latency_for_type(FUType functional_unit_type){
-    if (functional_unit_type == FUType::DIVIDER){
-        return config.divider_latency;
-    }
-    else if (functional_unit_type == FUType::MULTIPLIER){
-        return config.multiplier_latency;
-    }
-    else if (functional_unit_type == FUType::LOAD_STORE){
-        return config.ls_latency;
-    }
-    else{
-        return config.integer_latency;
-    }
+int Core::get_latency_for_type(FUType fu_type){
+    if (fu_type == FUType::DIVIDER) return config.divider_latency;
+    else if (fu_type == FUType::MULTIPLIER) return config.multiplier_latency;
+    else if (fu_type == FUType::LOAD_STORE) return config.ls_latency;
+    else return config.integer_latency;
 }
 
 
-
-//Helper function that checks if this instruction is the oldest ready instruction waiting for this FU type
-bool Core::can_dispatch_oldest(int global_rs_index, FUType functional_unit_type){
-
-    //Get the RS entry for the instruction we are checking
+bool Core::can_dispatch_oldest(int global_rs_index, FUType fu_type){
     ReservationStation* current_rs = get_rs_by_global_index(global_rs_index);
 
-    //Pick the right pool and offset based on the FU type
-    std::vector<ReservationStation>* pool_to_search;
+    // L/S is FIFO so dispatch order is already enforced
+    if (fu_type == FUType::LOAD_STORE) return true;
+
+    std::vector<ReservationStation>* pool;
     int pool_offset;
 
-    if (functional_unit_type == FUType::INTEGER){
-        pool_to_search = &integer_rs;
+    if (fu_type == FUType::INTEGER){
+        pool = &integer_rs;
         pool_offset = int_rs_offset;
     }
-    else if (functional_unit_type == FUType::DIVIDER){
-        pool_to_search = &divider_rs;
+    else if (fu_type == FUType::DIVIDER){
+        pool = &divider_rs;
         pool_offset = div_rs_offset;
     }
-    else if (functional_unit_type == FUType::MULTIPLIER){
-        pool_to_search = &multiplier_rs;
+    else{
+        pool = &multiplier_rs;
         pool_offset = mul_rs_offset;
     }
-    else{
-        //Load store is FIFO so it is always oldest first
-        return true;
-    }
 
-    //Scan every entry in the pool looking for a ready older instruction
-    for (int i = 0; i < (int)pool_to_search->size(); i++){
-        ReservationStation& other_rs = pool_to_search->at(i);
-        int other_global_index = pool_offset + i;
+    // check if any older instruction in the same pool is also ready and undispatched
+    for (int i = 0; i < (int)pool->size(); i++){
+        ReservationStation& other = pool->at(i);
+        int other_idx = pool_offset + i;
 
-        //Skip this RS if it is the one we are currently checking
-        if (other_global_index == global_rs_index){
-            continue;
-        }
+        if (other_idx == global_rs_index) continue;
+        if (!other.busy) continue;
+        if (other.Qj != -1 || other.Qk != -1) continue;
+        if (other.assigned_fu != -1) continue;
 
-        //Skip this RS if it is not busy
-        if (!other_rs.busy){
-            continue;
-        }
-
-        //Skip this RS if it still has operands waiting
-        if (other_rs.Qj != -1 || other_rs.Qk != -1){
-            continue;
-        }
-
-		//Skip this RS if it has already been dispatched to a FU
-        if (other_rs.assigned_fu != -1){
-            continue;
-        }
-
-        //If we get here the other RS is busy, ready, and older so we cannot dispatch
-        if (other_rs.issue_order < current_rs->issue_order){
-            return false;
-        }
+        if (other.issue_order < current_rs->issue_order) return false;
     }
 
     return true;
 }
 
 
-
-
-
-//Processes the Read Operand stage for an instruction
 void Core::handle_read_operand(int global_rs_index){
+    ReservationStation* rs = get_rs_by_global_index(global_rs_index);
 
-    //Get the RS entry for this instruction
-    ReservationStation* current_rs = get_rs_by_global_index(global_rs_index);
-
-    //If the RS is not busy something went wrong
-    if (!current_rs->busy){
+    if (!rs->busy){
         std::cerr << "Error: handle_read_operand called on non-busy RS " << global_rs_index << std::endl;
         exit(EXIT_FAILURE);
     }
 
-    //Check if source operands are still waiting on a tag
-    if (current_rs->Qj != -1 || current_rs->Qk != -1){
-        Event wait_event;
-        wait_event.timestamp = current_cycle + 1;
-        wait_event.stage = Stage::READ_OPERAND;
-        wait_event.rs_index = global_rs_index;
-        event_queue.push(wait_event);
+    // wait if operands arent ready yet
+    if (rs->Qj != -1 || rs->Qk != -1){
+        Event e;
+        e.timestamp = current_cycle + 1;
+        e.stage = Stage::READ_OPERAND;
+        e.rs_index = global_rs_index;
+        event_queue.push(e);
         return;
     }
 
-    //Operands are ready, check if this is the oldest ready instruction for this FU type
-    if (!can_dispatch_oldest(global_rs_index, current_rs->fu_type)){
-        Event wait_event;
-        wait_event.timestamp = current_cycle + 1;
-        wait_event.stage = Stage::READ_OPERAND;
-        wait_event.rs_index = global_rs_index;
-        event_queue.push(wait_event);
+    // wait if an older instruction is also ready for the same FU type
+    if (!can_dispatch_oldest(global_rs_index, rs->fu_type)){
+        Event e;
+        e.timestamp = current_cycle + 1;
+        e.stage = Stage::READ_OPERAND;
+        e.rs_index = global_rs_index;
+        event_queue.push(e);
         return;
     }
 
-    //This is the oldest ready instruction, look for a free FU
-    std::vector<FunctionalUnit>& fu_pool = get_fus_for_type(current_rs->fu_type);
-    int free_fu_index = -1;
-
-    for (int i = 0; i < (int)fu_pool.size(); i++){
-        if (!fu_pool.at(i).busy){
-            free_fu_index = i;
+    // find a free FU
+    std::vector<FunctionalUnit>& fus = get_fus_for_type(rs->fu_type);
+    int free_fu = -1;
+    for (int i = 0; i < (int)fus.size(); i++){
+        if (!fus[i].busy){
+            free_fu = i;
             break;
         }
     }
 
-    //If no free FU was found wait another cycle and count the stall
-    if (free_fu_index == -1){
+    // no free FU, stall
+    if (free_fu == -1){
         total_stalls++;
-        Event wait_event;
-        wait_event.timestamp = current_cycle + 1;
-        wait_event.stage = Stage::READ_OPERAND;
-        wait_event.rs_index = global_rs_index;
-        event_queue.push(wait_event);
+        Event e;
+        e.timestamp = current_cycle + 1;
+        e.stage = Stage::READ_OPERAND;
+        e.rs_index = global_rs_index;
+        event_queue.push(e);
         return;
     }
 
-    //A free FU was found, claim it and schedule an Execute event
-    fu_pool.at(free_fu_index).busy = true;
-    fu_pool.at(free_fu_index).rs_index = global_rs_index;
-    current_rs->assigned_fu = free_fu_index;
-    int execution_latency = get_latency_for_type(current_rs->fu_type);
-    fu_pool.at(free_fu_index).finish_cycle = current_cycle + execution_latency;
-    Event execute_event;
-    execute_event.timestamp = current_cycle + execution_latency;
-    execute_event.stage = Stage::EXECUTE;
-    execute_event.rs_index = global_rs_index;
-    event_queue.push(execute_event);
+    // dispatch to the FU
+    fus[free_fu].busy = true;
+    fus[free_fu].rs_index = global_rs_index;
+    rs->assigned_fu = free_fu;
+
+    int latency = get_latency_for_type(rs->fu_type);
+    fus[free_fu].finish_cycle = current_cycle + latency;
+
+    Event e;
+    e.timestamp = current_cycle + latency;
+    e.stage = Stage::EXECUTE;
+    e.rs_index = global_rs_index;
+    event_queue.push(e);
 }
 
 
-//Handles L/S Read Operand: only the head of the FIFO can dispatch
 void Core::handle_ls_read_operand(int global_rs_index){
-
     if (ls_rs.empty()){
         std::cerr << "Error: handle_ls_read_operand called but L/S queue is empty" << std::endl;
         exit(EXIT_FAILURE);
     }
 
-    // Only the head of the FIFO can dispatch
-    int head_global_index = ls_rs_offset;
-    if (global_rs_index != head_global_index){
-        // Not at the head, wait
-        Event wait_event;
-        wait_event.timestamp = current_cycle + 1;
-        wait_event.stage = Stage::READ_OPERAND;
-        wait_event.rs_index = global_rs_index;
-        event_queue.push(wait_event);
+    // only the head of the FIFO can dispatch
+    int head_idx = ls_rs_offset;
+    if (global_rs_index != head_idx){
+        Event e;
+        e.timestamp = current_cycle + 1;
+        e.stage = Stage::READ_OPERAND;
+        e.rs_index = global_rs_index;
+        event_queue.push(e);
         return;
     }
 
-    ReservationStation& head_rs = ls_rs.front();
+    ReservationStation& head = ls_rs.front();
 
-    // Check if operands are ready
-    if (head_rs.Qj != -1 || head_rs.Qk != -1){
-        Event wait_event;
-        wait_event.timestamp = current_cycle + 1;
-        wait_event.stage = Stage::READ_OPERAND;
-        wait_event.rs_index = global_rs_index;
-        event_queue.push(wait_event);
+    // wait for operands
+    if (head.Qj != -1 || head.Qk != -1){
+        Event e;
+        e.timestamp = current_cycle + 1;
+        e.stage = Stage::READ_OPERAND;
+        e.rs_index = global_rs_index;
+        event_queue.push(e);
         return;
     }
 
-    // Check if L/S FU is free and no memory operation is pending
+    // wait if the L/S FU is busy or a memory op is still pending
     if (ls_fu.busy || memory_pending){
-        Event wait_event;
-        wait_event.timestamp = current_cycle + 1;
-        wait_event.stage = Stage::READ_OPERAND;
-        wait_event.rs_index = global_rs_index;
-        event_queue.push(wait_event);
+        Event e;
+        e.timestamp = current_cycle + 1;
+        e.stage = Stage::READ_OPERAND;
+        e.rs_index = global_rs_index;
+        event_queue.push(e);
         return;
     }
 
-    // Dispatch to L/S FU: compute effective address
+    // dispatch: compute effective address
     ls_fu.busy = true;
     ls_fu.rs_index = global_rs_index;
-    head_rs.assigned_fu = 0;
-    head_rs.address = head_rs.Vj; // effective address = base register value
+    head.assigned_fu = 0;
+    head.address = head.Vj;
 
-    // Schedule execute completion after address computation latency
-    int addr_latency = get_latency_for_type(FUType::LOAD_STORE);
-    ls_fu.finish_cycle = current_cycle + addr_latency;
-    Event execute_event;
-    execute_event.timestamp = current_cycle + addr_latency;
-    execute_event.stage = Stage::EXECUTE;
-    execute_event.rs_index = global_rs_index;
-    event_queue.push(execute_event);
+    int latency = get_latency_for_type(FUType::LOAD_STORE);
+    ls_fu.finish_cycle = current_cycle + latency;
+
+    Event e;
+    e.timestamp = current_cycle + latency;
+    e.stage = Stage::EXECUTE;
+    e.rs_index = global_rs_index;
+    event_queue.push(e);
 }
 
 
-//Processes the Execute stage for an instruction
 void Core::handle_execute(int global_rs_index){
+    ReservationStation* rs = get_rs_by_global_index(global_rs_index);
 
-    ReservationStation* current_rs = get_rs_by_global_index(global_rs_index);
-
-    // For L/S instructions, send the memory request instead of going to WriteResult
-    if (current_rs->fu_type == FUType::LOAD_STORE){
+    // L/S: send the memory request after address computation
+    if (rs->fu_type == FUType::LOAD_STORE){
         memory_pending = true;
         memory_pending_rs = global_rs_index;
 
-        if (current_rs->opcode == LW){
-            memory_wrapper->read(current_rs->address, [this, global_rs_index](uint16_t addr, uint16_t data){
-                // Store the loaded value so WriteResult can broadcast it
-                ReservationStation* rs = get_rs_by_global_index(global_rs_index);
-                rs->Vk = data; // stash loaded value in Vk
+        if (rs->opcode == LW){
+            memory_wrapper->read(rs->address, [this, global_rs_index](uint16_t addr, uint16_t data){
+                ReservationStation* load_rs = get_rs_by_global_index(global_rs_index);
+                load_rs->Vk = data;
 
-                // Schedule a WRITE_RESULT event for the next cycle
-                Event wr_event;
-                wr_event.timestamp = current_cycle + 1;
-                wr_event.stage = Stage::WRITE_RESULT;
-                wr_event.rs_index = global_rs_index;
-                event_queue.push(wr_event);
+                Event e;
+                e.timestamp = current_cycle + 1;
+                e.stage = Stage::WRITE_RESULT;
+                e.rs_index = global_rs_index;
+                event_queue.push(e);
 
                 memory_pending = false;
                 memory_pending_rs = -1;
             });
         }
-        else if (current_rs->opcode == SW){
-            memory_wrapper->write(current_rs->address, current_rs->Vk, [this, global_rs_index](uint16_t addr){
-                // SW has no broadcast, but still needs to free the RS and FU
-                Event wr_event;
-                wr_event.timestamp = current_cycle + 1;
-                wr_event.stage = Stage::WRITE_RESULT;
-                wr_event.rs_index = global_rs_index;
-                event_queue.push(wr_event);
+        else if (rs->opcode == SW){
+            memory_wrapper->write(rs->address, rs->Vk, [this, global_rs_index](uint16_t addr){
+                Event e;
+                e.timestamp = current_cycle + 1;
+                e.stage = Stage::WRITE_RESULT;
+                e.rs_index = global_rs_index;
+                event_queue.push(e);
 
                 memory_pending = false;
                 memory_pending_rs = -1;
@@ -651,72 +560,68 @@ void Core::handle_execute(int global_rs_index){
         return;
     }
 
-    //Schedule a WRITE_RESULT event for the next cycle
-    Event write_result_event;
-    write_result_event.timestamp = current_cycle + 1;
-    write_result_event.stage = Stage::WRITE_RESULT;
-    write_result_event.rs_index = global_rs_index;
-    event_queue.push(write_result_event);
+    // non-L/S: just schedule write result
+    Event e;
+    e.timestamp = current_cycle + 1;
+    e.stage = Stage::WRITE_RESULT;
+    e.rs_index = global_rs_index;
+    event_queue.push(e);
 }
 
 
-//Handles the memory response for L/S (unused now since callbacks handle it, kept for future use)
 void Core::handle_memory_response(int global_rs_index){
-    // Memory responses are handled via callbacks in handle_execute
-    // This is a placeholder in case we need event-based memory handling later
+    // memory responses handled via callbacks in handle_execute
 }
 
 
-//Processes the Write Result stage: broadcast result, update register alias table, free RS and FU
 void Core::handle_write_result(int global_rs_index){
+    ReservationStation* rs = get_rs_by_global_index(global_rs_index);
 
-    ReservationStation* current_rs = get_rs_by_global_index(global_rs_index);
-
-    if (!current_rs->busy){
+    if (!rs->busy){
         std::cerr << "Error: handle_write_result called on non-busy RS " << global_rs_index << std::endl;
         exit(EXIT_FAILURE);
     }
 
-    // Broadcast: clear Qj/Qk in all RS pools that are waiting on this tag
-    for (auto &rs : integer_rs){
-        if (rs.busy){
-            if (rs.Qj == global_rs_index) rs.Qj = -1;
-            if (rs.Qk == global_rs_index) rs.Qk = -1;
+    // broadcast: clear tags in all RS pools waiting on this result
+    for (auto &r : integer_rs){
+        if (r.busy){
+            if (r.Qj == global_rs_index) r.Qj = -1;
+            if (r.Qk == global_rs_index) r.Qk = -1;
         }
     }
-    for (auto &rs : divider_rs){
-        if (rs.busy){
-            if (rs.Qj == global_rs_index) rs.Qj = -1;
-            if (rs.Qk == global_rs_index) rs.Qk = -1;
+    for (auto &r : divider_rs){
+        if (r.busy){
+            if (r.Qj == global_rs_index) r.Qj = -1;
+            if (r.Qk == global_rs_index) r.Qk = -1;
         }
     }
-    for (auto &rs : multiplier_rs){
-        if (rs.busy){
-            if (rs.Qj == global_rs_index) rs.Qj = -1;
-            if (rs.Qk == global_rs_index) rs.Qk = -1;
+    for (auto &r : multiplier_rs){
+        if (r.busy){
+            if (r.Qj == global_rs_index) r.Qj = -1;
+            if (r.Qk == global_rs_index) r.Qk = -1;
         }
     }
-    for (auto &rs : ls_rs){
-        if (rs.busy){
-            if (rs.Qj == global_rs_index) rs.Qj = -1;
-            if (rs.Qk == global_rs_index) rs.Qk = -1;
-        }
-    }
-
-    // Update register alias table: only clear if it still points to this RS
-    if (current_rs->dest_reg != -1){
-        if (reg_status.at(current_rs->dest_reg).tag == global_rs_index){
-            reg_status.at(current_rs->dest_reg).tag = -1;
+    for (auto &r : ls_rs){
+        if (r.busy){
+            if (r.Qj == global_rs_index) r.Qj = -1;
+            if (r.Qk == global_rs_index) r.Qk = -1;
         }
     }
 
-    // Free the FU
-    if (current_rs->fu_type != FUType::LOAD_STORE){
-        std::vector<FunctionalUnit>& fu_pool = get_fus_for_type(current_rs->fu_type);
-        if (current_rs->assigned_fu != -1 && current_rs->assigned_fu < (int)fu_pool.size()){
-            fu_pool.at(current_rs->assigned_fu).busy = false;
-            fu_pool.at(current_rs->assigned_fu).rs_index = -1;
-            fu_pool.at(current_rs->assigned_fu).instructions_executed++;
+    // update register alias table
+    if (rs->dest_reg != -1){
+        if (reg_status.at(rs->dest_reg).tag == global_rs_index){
+            reg_status.at(rs->dest_reg).tag = -1;
+        }
+    }
+
+    // free the FU
+    if (rs->fu_type != FUType::LOAD_STORE){
+        std::vector<FunctionalUnit>& fus = get_fus_for_type(rs->fu_type);
+        if (rs->assigned_fu != -1 && rs->assigned_fu < (int)fus.size()){
+            fus[rs->assigned_fu].busy = false;
+            fus[rs->assigned_fu].rs_index = -1;
+            fus[rs->assigned_fu].instructions_executed++;
         }
     }
     else{
@@ -725,60 +630,58 @@ void Core::handle_write_result(int global_rs_index){
         ls_fu.instructions_executed++;
     }
 
-    // Free the RS: for L/S pop from the front of the FIFO
-    if (current_rs->fu_type == FUType::LOAD_STORE){
+    // free the RS
+    if (rs->fu_type == FUType::LOAD_STORE){
         if (!ls_rs.empty()){
             ls_rs.pop_front();
-            // After popping, all remaining L/S RS global indices shift down by 1
-            // We need to update any events in the queue and reg_status tags that reference L/S RS indices
-            // However since we always only dispatch the head (index ls_rs_offset), and we pop the head,
-            // the new head is now at ls_rs_offset again. Any other L/S entries in the queue
-            // have their global index reduced by 1.
-            // We need to fix up tags in reg_status and Qj/Qk in all RS pools.
+
+            // popping the front shifts all L/S indices down by 1
+            // fix up tags in reg_status, Qj/Qk in all pools, and events in the queue
             for (int i = 0; i < 8; i++){
                 if (reg_status[i].tag > ls_rs_offset && reg_status[i].tag < ls_rs_offset + (int)ls_rs.size() + 1){
                     reg_status[i].tag--;
                 }
             }
-            for (auto &rs : integer_rs){
-                if (rs.busy){
-                    if (rs.Qj > ls_rs_offset && rs.Qj < ls_rs_offset + (int)ls_rs.size() + 1) rs.Qj--;
-                    if (rs.Qk > ls_rs_offset && rs.Qk < ls_rs_offset + (int)ls_rs.size() + 1) rs.Qk--;
+            for (auto &r : integer_rs){
+                if (r.busy){
+                    if (r.Qj > ls_rs_offset && r.Qj < ls_rs_offset + (int)ls_rs.size() + 1) r.Qj--;
+                    if (r.Qk > ls_rs_offset && r.Qk < ls_rs_offset + (int)ls_rs.size() + 1) r.Qk--;
                 }
             }
-            for (auto &rs : divider_rs){
-                if (rs.busy){
-                    if (rs.Qj > ls_rs_offset && rs.Qj < ls_rs_offset + (int)ls_rs.size() + 1) rs.Qj--;
-                    if (rs.Qk > ls_rs_offset && rs.Qk < ls_rs_offset + (int)ls_rs.size() + 1) rs.Qk--;
+            for (auto &r : divider_rs){
+                if (r.busy){
+                    if (r.Qj > ls_rs_offset && r.Qj < ls_rs_offset + (int)ls_rs.size() + 1) r.Qj--;
+                    if (r.Qk > ls_rs_offset && r.Qk < ls_rs_offset + (int)ls_rs.size() + 1) r.Qk--;
                 }
             }
-            for (auto &rs : multiplier_rs){
-                if (rs.busy){
-                    if (rs.Qj > ls_rs_offset && rs.Qj < ls_rs_offset + (int)ls_rs.size() + 1) rs.Qj--;
-                    if (rs.Qk > ls_rs_offset && rs.Qk < ls_rs_offset + (int)ls_rs.size() + 1) rs.Qk--;
+            for (auto &r : multiplier_rs){
+                if (r.busy){
+                    if (r.Qj > ls_rs_offset && r.Qj < ls_rs_offset + (int)ls_rs.size() + 1) r.Qj--;
+                    if (r.Qk > ls_rs_offset && r.Qk < ls_rs_offset + (int)ls_rs.size() + 1) r.Qk--;
                 }
             }
-            for (auto &rs : ls_rs){
-                if (rs.busy){
-                    if (rs.Qj > ls_rs_offset && rs.Qj < ls_rs_offset + (int)ls_rs.size() + 1) rs.Qj--;
-                    if (rs.Qk > ls_rs_offset && rs.Qk < ls_rs_offset + (int)ls_rs.size() + 1) rs.Qk--;
+            for (auto &r : ls_rs){
+                if (r.busy){
+                    if (r.Qj > ls_rs_offset && r.Qj < ls_rs_offset + (int)ls_rs.size() + 1) r.Qj--;
+                    if (r.Qk > ls_rs_offset && r.Qk < ls_rs_offset + (int)ls_rs.size() + 1) r.Qk--;
                 }
             }
-            // Also need to rebuild the event queue to fix L/S RS indices
+
+            // rebuild the event queue to fix L/S RS indices
             std::priority_queue<Event, std::vector<Event>, std::greater<Event>> new_queue;
             while (!event_queue.empty()){
-                Event e = event_queue.top();
+                Event ev = event_queue.top();
                 event_queue.pop();
-                if (e.rs_index > ls_rs_offset && e.rs_index < ls_rs_offset + (int)ls_rs.size() + 1){
-                    e.rs_index--;
+                if (ev.rs_index > ls_rs_offset && ev.rs_index < ls_rs_offset + (int)ls_rs.size() + 1){
+                    ev.rs_index--;
                 }
-                new_queue.push(e);
+                new_queue.push(ev);
             }
             event_queue = new_queue;
         }
     }
     else{
-        current_rs->clear();
+        rs->clear();
     }
 }
 
