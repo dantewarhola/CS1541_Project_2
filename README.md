@@ -163,6 +163,68 @@ TBD
 - Confirmed the simulation ended cleanly at cycle 5 with no hanging
 - Had to fix a bug in can_dispatch_oldest where it was not skipping RS entries that had already been dispatched to a FU
 
+## Phase 7: Write Result Stage
+
+### 7.1 Implement handle_write_result:
+- Added handle_write_result to core.cpp which handles the broadcast, register alias table update, and freeing of the RS and FU
+- On broadcast it scans all RS pools (integer, divider, multiplier, L/S) and clears any Qj or Qk that match the completing RS index
+- Only clears the register alias table entry if it still points to this RS, since a later instruction may have already overwritten it
+- Frees the FU and increments its instruction count, then clears the RS
+
+### 7.2 Update get_rs_by_global_index:
+- Added support for L/S global indices so it can look up entries in the ls_rs deque instead of crashing
+
+### 7.3 Wire into tick():
+- Replaced the WRITE_RESULT TODO stub with a call to handle_write_result
+
+### 7.4 Test:
+- Tested with two independent LIZ instructions plus HALT, got total cycles 6 with 0 stalls which matches hand calculation
+- Tested with a RAW dependency chain (two LIZ then ADD that reads both results), got total cycles 8 with 0 stalls
+- The ADD correctly waited in Read Operand until both LIZ instructions broadcast their results
+
+## Phase 8: Load/Store Unit (FIFO Queue)
+
+### 8.1 Implement handle_ls_read_operand:
+- Added a separate handler for L/S instructions since they use a FIFO queue instead of normal RS dispatch
+- Only the head of the queue can dispatch, all other entries wait until they reach the front
+- Checks that operands are ready, the L/S FU is free, and no memory operation is currently pending before dispatching
+- Dispatches by computing the effective address from Vj and scheduling an Execute event after ls_latency cycles
+
+### 8.2 Update handle_execute for L/S:
+- For L/S instructions handle_execute now sends a memory request through memory_wrapper instead of going straight to Write Result
+- LW uses memory_wrapper->read() with a callback that stores the loaded value and schedules Write Result
+- SW uses memory_wrapper->write() with a callback that schedules Write Result
+- Sets memory_pending to true so no other L/S instruction can send a memory request until this one finishes
+
+### 8.3 Update handle_write_result for L/S:
+- For L/S instructions the RS is freed by popping the front of the deque instead of calling clear()
+- After popping, all L/S global indices shift down by 1 so we fix up tags in reg_status, Qj/Qk in all RS pools, and event queue indices
+
+### 8.4 Update tick() routing:
+- READ_OPERAND events now check the FU type and route L/S instructions to handle_ls_read_operand
+- Added MEMORY_PENDING event handling
+- Termination check now also waits for memory_pending to be false
+
+### 8.5 Test:
+- Ran with example_program.m which has SW and LW instructions
+- Both memory requests went through correctly (confirmed by memory_wrapper print statements)
+- Total cycles was 6031 due to no cache, each memory access taking ~1000 cycles to DRAM
+
+## Phase 9: L1 Cache Integration
+
+### 9.1 Update config.py:
+- Read cache associativity and size from the configuration JSON
+- Created an SST memHierarchy.Cache component between the CPU and memory
+- Set cache_line_size to 16, access_latency_cycles to 1, and L1 to true as specified
+- Changed the two links: CPU connects to cache, cache connects to memory
+- Also changed the core clock to use the clock value from the configuration JSON instead of hardcoded 3GHz
+
+### 9.2 Test:
+- Ran with example_program.m and confirmed the cache is working
+- SW was a cold miss (latency 1005 cycles to DRAM), LW was a cache hit (latency 2 cycles)
+- Total cycles dropped from 6031 without cache to 1022 with cache
+- Cache stats confirmed 1 hit and 1 miss which is correct for a SW followed by a LW to the same address
+
 
 # Part 2: Tests & Bugs:
 
