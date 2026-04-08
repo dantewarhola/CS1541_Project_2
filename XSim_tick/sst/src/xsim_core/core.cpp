@@ -331,7 +331,7 @@ bool Core::tick(Cycle_t cycle){
 			handle_execute(current_event.rs_index);
 		}
 		else if (current_event.stage == Stage::WRITE_RESULT){
-			// TODO: implement in next phase
+			handle_write_result(current_event.rs_index);
 		}
 	}
 
@@ -359,10 +359,18 @@ ReservationStation* Core::get_rs_by_global_index(int global_rs_index){
         int local_index = global_rs_index - mul_rs_offset;
         return &multiplier_rs.at(local_index);
     }
-	else{
-		std::cerr << "Error: Invalid global RS index " << global_rs_index << std::endl;
-		exit(EXIT_FAILURE);
-	}
+    else if (global_rs_index >= ls_rs_offset && global_rs_index < total_rs_count){
+        int local_index = global_rs_index - ls_rs_offset;
+        if (local_index < (int)ls_rs.size()){
+            return &ls_rs.at(local_index);
+        }
+        std::cerr << "Error: L/S RS index " << local_index << " out of range (size=" << ls_rs.size() << ")" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+    else{
+        std::cerr << "Error: Invalid global RS index " << global_rs_index << std::endl;
+        exit(EXIT_FAILURE);
+    }
 }
 
 
@@ -540,6 +548,69 @@ void Core::handle_execute(int global_rs_index){
     write_result_event.stage = Stage::WRITE_RESULT;
     write_result_event.rs_index = global_rs_index;
     event_queue.push(write_result_event);
+}
+
+
+//Processes the Write Result stage: broadcast result, update register alias table, free RS and FU
+void Core::handle_write_result(int global_rs_index){
+
+    ReservationStation* current_rs = get_rs_by_global_index(global_rs_index);
+
+    if (!current_rs->busy){
+        std::cerr << "Error: handle_write_result called on non-busy RS " << global_rs_index << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    // Broadcast: clear Qj/Qk in all RS pools that are waiting on this tag
+    for (auto &rs : integer_rs){
+        if (rs.busy){
+            if (rs.Qj == global_rs_index) rs.Qj = -1;
+            if (rs.Qk == global_rs_index) rs.Qk = -1;
+        }
+    }
+    for (auto &rs : divider_rs){
+        if (rs.busy){
+            if (rs.Qj == global_rs_index) rs.Qj = -1;
+            if (rs.Qk == global_rs_index) rs.Qk = -1;
+        }
+    }
+    for (auto &rs : multiplier_rs){
+        if (rs.busy){
+            if (rs.Qj == global_rs_index) rs.Qj = -1;
+            if (rs.Qk == global_rs_index) rs.Qk = -1;
+        }
+    }
+    for (auto &rs : ls_rs){
+        if (rs.busy){
+            if (rs.Qj == global_rs_index) rs.Qj = -1;
+            if (rs.Qk == global_rs_index) rs.Qk = -1;
+        }
+    }
+
+    // Update register alias table: only clear if it still points to this RS
+    if (current_rs->dest_reg != -1){
+        if (reg_status.at(current_rs->dest_reg).tag == global_rs_index){
+            reg_status.at(current_rs->dest_reg).tag = -1;
+        }
+    }
+
+    // Free the FU
+    if (current_rs->fu_type != FUType::LOAD_STORE){
+        std::vector<FunctionalUnit>& fu_pool = get_fus_for_type(current_rs->fu_type);
+        if (current_rs->assigned_fu != -1 && current_rs->assigned_fu < (int)fu_pool.size()){
+            fu_pool.at(current_rs->assigned_fu).busy = false;
+            fu_pool.at(current_rs->assigned_fu).rs_index = -1;
+            fu_pool.at(current_rs->assigned_fu).instructions_executed++;
+        }
+    }
+    else{
+        ls_fu.busy = false;
+        ls_fu.rs_index = -1;
+        ls_fu.instructions_executed++;
+    }
+
+    // Free the RS
+    current_rs->clear();
 }
 
 

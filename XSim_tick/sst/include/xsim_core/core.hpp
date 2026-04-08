@@ -107,6 +107,9 @@ class Core: public SST::Component
 		//Helper function to handle the logic of executing an instruction
 		void handle_execute(int global_rs_index);
 
+		//Helper function to handle the Write Result stage (broadcast, free RS and FU)
+		void handle_write_result(int global_rs_index);
+
 	private:
 		int verbose{0};
 		std::string clock_frequency{"0Hz"};
