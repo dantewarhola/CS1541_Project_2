@@ -104,6 +104,9 @@ class Core: public SST::Component
 		//Helper function to handle the logic of reading an operand 
 		void handle_read_operand(int global_rs_index);
 
+		//Helper function to handle the logic of executing an instruction
+		void handle_execute(int global_rs_index);
+
 	private:
 		int verbose{0};
 		std::string clock_frequency{"0Hz"};

@@ -328,7 +328,7 @@ bool Core::tick(Cycle_t cycle){
 			handle_read_operand(current_event.rs_index);
 		}
 		else if (current_event.stage == Stage::EXECUTE){
-			// TODO: implement in next phase
+			handle_execute(current_event.rs_index);
 		}
 		else if (current_event.stage == Stage::WRITE_RESULT){
 			// TODO: implement in next phase
@@ -445,6 +445,11 @@ bool Core::can_dispatch_oldest(int global_rs_index, FUType functional_unit_type)
             continue;
         }
 
+		//Skip this RS if it has already been dispatched to a FU
+        if (other_rs.assigned_fu != -1){
+            continue;
+        }
+
         //If we get here the other RS is busy, ready, and older so we cannot dispatch
         if (other_rs.issue_order < current_rs->issue_order){
             return false;
@@ -526,6 +531,16 @@ void Core::handle_read_operand(int global_rs_index){
 }
 
 
+//Processes the Execute stage for an instruction
+void Core::handle_execute(int global_rs_index){
+
+    //Schedule a WRITE_RESULT event for the next cycle
+    Event write_result_event;
+    write_result_event.timestamp = current_cycle + 1;
+    write_result_event.stage = Stage::WRITE_RESULT;
+    write_result_event.rs_index = global_rs_index;
+    event_queue.push(write_result_event);
+}
 
 
 
