@@ -57,6 +57,10 @@ core.addParams({
   "output": args.output
 })
 
+
+
+
+
 # changed this to add the configuration parameters to the core instead of the latencies
 core.addParams(configuration)
 # Configure the memory interface in our CPU to use the standard interface

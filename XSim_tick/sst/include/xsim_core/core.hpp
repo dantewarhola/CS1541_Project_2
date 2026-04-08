@@ -92,6 +92,18 @@ class Core: public SST::Component
 		void load_program(Params &params);
 		void load_configuration(Params &params);
 
+
+		//Helper functions used by the Read Operand stage to look up RS entries, FU pools, and latencies
+		ReservationStation* get_rs_by_global_index(int global_rs_index);
+		std::vector<FunctionalUnit>& get_fus_for_type(FUType functional_unit_type);
+		int get_latency_for_type(FUType functional_unit_type);
+
+		//Helper function to check if the oldest instruction in a given RS can be dispatched to a FU
+		bool can_dispatch_oldest(int global_rs_index, FUType functional_unit_type);
+
+		//Helper function to handle the logic of reading an operand 
+		void handle_read_operand(int global_rs_index);
+
 	private:
 		int verbose{0};
 		std::string clock_frequency{"0Hz"};

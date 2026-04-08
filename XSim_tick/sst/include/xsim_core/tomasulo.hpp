@@ -43,11 +43,16 @@ struct ReservationStation
     int dest_reg{-1};
     int assigned_fu{-1};
 
+    // Created issue order to track when the instruction was issued
+    int issue_order{-1};
+
     // L/S specific
     uint16_t address{0};
     uint16_t store_data{0};
     int Qstore{-1};
     bool store_data_ready{false};
+
+
 
     void clear()
     {
@@ -63,6 +68,8 @@ struct ReservationStation
         store_data = 0;
         Qstore = -1;
         store_data_ready = false;
+        // reset the issue order 
+        issue_order = -1;
     }
 };
 

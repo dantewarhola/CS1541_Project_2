@@ -184,12 +184,11 @@ void Core::load_program(Params &params)
 
 
 bool Core::tick(Cycle_t cycle){
-
 	current_cycle = cycle;
 
 
 	// This if statement checks if there are still instructions left in the trace array to issue
-	if(next_issue_index < (int)program.size()) {
+	if(next_issue_index < (int)program.size()){
 		uint16_t instruction = program[next_issue_index];
         uint16_t opcode = instruction >> 11;
         FUType fu_type = opcode_to_fu_type(opcode);
@@ -213,6 +212,7 @@ bool Core::tick(Cycle_t cycle){
 					integer_rs[i].opcode = opcode;
 					integer_rs[i].fu_type = fu_type;
 					integer_rs[i].dest_reg = get_dest_reg(instruction, opcode);
+					integer_rs[i].issue_order = next_issue_index;
 					break;
 				}
 			}
@@ -227,6 +227,7 @@ bool Core::tick(Cycle_t cycle){
 					divider_rs[i].opcode = opcode;
 					divider_rs[i].fu_type = fu_type;
 					divider_rs[i].dest_reg = get_dest_reg(instruction, opcode);
+					divider_rs[i].issue_order = next_issue_index;
 					break;
 				}
 			}
@@ -241,6 +242,7 @@ bool Core::tick(Cycle_t cycle){
 					multiplier_rs[i].opcode = opcode;
 					multiplier_rs[i].fu_type = fu_type;
 					multiplier_rs[i].dest_reg = get_dest_reg(instruction, opcode);
+					multiplier_rs[i].issue_order = next_issue_index;
 					break;
 				}
 			}
@@ -253,13 +255,49 @@ bool Core::tick(Cycle_t cycle){
 				new_rs.opcode = opcode;
 				new_rs.fu_type = fu_type;
 				new_rs.dest_reg = get_dest_reg(instruction, opcode);
+				new_rs.issue_order = next_issue_index;
 				ls_rs.push_back(new_rs);
 				found_rs_index = ls_rs_offset + (int)ls_rs.size() - 1;
 			}
 		}
-		// If a free RS was found, schedule a READ_OPERAND event
+
+		//If a free RS was found, schedule a READ_OPERAND event
 		if (found_rs_index != -1){
-			// Schedule a READ_OPERAND event for the next cycle
+
+			//Get the RS entry and source registers for this instruction
+			ReservationStation* current_rs = get_rs_by_global_index(found_rs_index);
+			SourceRegs source_regs = get_source_regs(instruction, opcode);
+
+
+			//Check if source register Qj is ready or waiting on a tag
+			if (source_regs.rs != -1){
+				if (reg_status.at(source_regs.rs).tag == -1){
+					current_rs->Vj = registers.at(source_regs.rs); 
+					total_reg_reads++;                              
+				}
+				else{
+					current_rs->Qj = reg_status.at(source_regs.rs).tag; 
+				}
+			}
+
+
+			//Check if source register Qk is ready or waiting on a tag
+			if (source_regs.rt != -1){
+				if (reg_status.at(source_regs.rt).tag == -1){
+					current_rs->Vk = registers.at(source_regs.rt); 
+					total_reg_reads++;                              
+				}
+				else{
+					current_rs->Qk = reg_status.at(source_regs.rt).tag; 
+				}
+			}
+
+			//If this instruction writes a destination register update reg_status to point to this RS
+			if (current_rs->dest_reg != -1){
+				reg_status.at(current_rs->dest_reg).tag = found_rs_index;
+			}
+
+			//Schedule a READ_OPERAND event for the next cycle
 			Event next_event;
 			next_event.timestamp = current_cycle + 1;
 			next_event.stage = Stage::READ_OPERAND;
@@ -273,17 +311,223 @@ bool Core::tick(Cycle_t cycle){
 		else{
 			total_stalls++;
 		}
+
+
+
+	}
+
+	//Process all events that are scheduled to happen on this cycle
+	while (!event_queue.empty() && event_queue.top().timestamp == current_cycle){
+
+		//Pop the event off the queue
+		Event current_event = event_queue.top();
+		event_queue.pop();
+
+		//Dispatch the event to the correct handler based on its stage
+		if (current_event.stage == Stage::READ_OPERAND){
+			handle_read_operand(current_event.rs_index);
+		}
+		else if (current_event.stage == Stage::EXECUTE){
+			// TODO: implement in next phase
+		}
+		else if (current_event.stage == Stage::WRITE_RESULT){
+			// TODO: implement in next phase
+		}
 	}
 
 	// If all instructions have been issued and there are no more events to process then end the simulation
-	if (next_issue_index >= (int)program.size() && event_queue.empty())
-	{
+	if (next_issue_index >= (int)program.size() && event_queue.empty()){
 		primaryComponentOKToEndSim();
 		terminate = true;
 	}
 
 	return terminate;
 }
+
+
+// Helper function that takes a global RS index and returns a pointer to the actual RS entry in the right pool
+ReservationStation* Core::get_rs_by_global_index(int global_rs_index){
+    if (global_rs_index >= int_rs_offset && global_rs_index < div_rs_offset){
+        int local_index = global_rs_index - int_rs_offset;
+        return &integer_rs.at(local_index);
+    }
+    else if (global_rs_index >= div_rs_offset && global_rs_index < mul_rs_offset){
+        int local_index = global_rs_index - div_rs_offset;
+        return &divider_rs.at(local_index);
+    }
+    else if (global_rs_index >= mul_rs_offset && global_rs_index < ls_rs_offset){
+        int local_index = global_rs_index - mul_rs_offset;
+        return &multiplier_rs.at(local_index);
+    }
+	else{
+		std::cerr << "Error: Invalid global RS index " << global_rs_index << std::endl;
+		exit(EXIT_FAILURE);
+	}
+}
+
+
+// Helper function that takes a FU type and returns the vector of FUs of that type
+std::vector<FunctionalUnit>& Core::get_fus_for_type(FUType functional_unit_type){
+    if (functional_unit_type == FUType::DIVIDER){
+        return divider_fus;
+    }
+    else if (functional_unit_type == FUType::MULTIPLIER){
+        return multiplier_fus;
+    }
+    else{
+        return integer_fus;
+    }
+}
+
+
+//Helper function that takes a FU type looks how many cycles that FU type takes to execute 
+int Core::get_latency_for_type(FUType functional_unit_type){
+    if (functional_unit_type == FUType::DIVIDER){
+        return config.divider_latency;
+    }
+    else if (functional_unit_type == FUType::MULTIPLIER){
+        return config.multiplier_latency;
+    }
+    else if (functional_unit_type == FUType::LOAD_STORE){
+        return config.ls_latency;
+    }
+    else{
+        return config.integer_latency;
+    }
+}
+
+
+
+//Helper function that checks if this instruction is the oldest ready instruction waiting for this FU type
+bool Core::can_dispatch_oldest(int global_rs_index, FUType functional_unit_type){
+
+    //Get the RS entry for the instruction we are checking
+    ReservationStation* current_rs = get_rs_by_global_index(global_rs_index);
+
+    //Pick the right pool and offset based on the FU type
+    std::vector<ReservationStation>* pool_to_search;
+    int pool_offset;
+
+    if (functional_unit_type == FUType::INTEGER){
+        pool_to_search = &integer_rs;
+        pool_offset = int_rs_offset;
+    }
+    else if (functional_unit_type == FUType::DIVIDER){
+        pool_to_search = &divider_rs;
+        pool_offset = div_rs_offset;
+    }
+    else if (functional_unit_type == FUType::MULTIPLIER){
+        pool_to_search = &multiplier_rs;
+        pool_offset = mul_rs_offset;
+    }
+    else{
+        //Load store is FIFO so it is always oldest first
+        return true;
+    }
+
+    //Scan every entry in the pool looking for a ready older instruction
+    for (int i = 0; i < (int)pool_to_search->size(); i++){
+        ReservationStation& other_rs = pool_to_search->at(i);
+        int other_global_index = pool_offset + i;
+
+        //Skip this RS if it is the one we are currently checking
+        if (other_global_index == global_rs_index){
+            continue;
+        }
+
+        //Skip this RS if it is not busy
+        if (!other_rs.busy){
+            continue;
+        }
+
+        //Skip this RS if it still has operands waiting
+        if (other_rs.Qj != -1 || other_rs.Qk != -1){
+            continue;
+        }
+
+        //If we get here the other RS is busy, ready, and older so we cannot dispatch
+        if (other_rs.issue_order < current_rs->issue_order){
+            return false;
+        }
+    }
+
+    return true;
+}
+
+
+
+
+
+//Processes the Read Operand stage for an instruction
+void Core::handle_read_operand(int global_rs_index){
+
+    //Get the RS entry for this instruction
+    ReservationStation* current_rs = get_rs_by_global_index(global_rs_index);
+
+    //If the RS is not busy something went wrong
+    if (!current_rs->busy){
+        std::cerr << "Error: handle_read_operand called on non-busy RS " << global_rs_index << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    //Check if source operands are still waiting on a tag
+    if (current_rs->Qj != -1 || current_rs->Qk != -1){
+        Event wait_event;
+        wait_event.timestamp = current_cycle + 1;
+        wait_event.stage = Stage::READ_OPERAND;
+        wait_event.rs_index = global_rs_index;
+        event_queue.push(wait_event);
+        return;
+    }
+
+    //Operands are ready, check if this is the oldest ready instruction for this FU type
+    if (!can_dispatch_oldest(global_rs_index, current_rs->fu_type)){
+        Event wait_event;
+        wait_event.timestamp = current_cycle + 1;
+        wait_event.stage = Stage::READ_OPERAND;
+        wait_event.rs_index = global_rs_index;
+        event_queue.push(wait_event);
+        return;
+    }
+
+    //This is the oldest ready instruction, look for a free FU
+    std::vector<FunctionalUnit>& fu_pool = get_fus_for_type(current_rs->fu_type);
+    int free_fu_index = -1;
+
+    for (int i = 0; i < (int)fu_pool.size(); i++){
+        if (!fu_pool.at(i).busy){
+            free_fu_index = i;
+            break;
+        }
+    }
+
+    //If no free FU was found wait another cycle and count the stall
+    if (free_fu_index == -1){
+        total_stalls++;
+        Event wait_event;
+        wait_event.timestamp = current_cycle + 1;
+        wait_event.stage = Stage::READ_OPERAND;
+        wait_event.rs_index = global_rs_index;
+        event_queue.push(wait_event);
+        return;
+    }
+
+    //A free FU was found, claim it and schedule an Execute event
+    fu_pool.at(free_fu_index).busy = true;
+    fu_pool.at(free_fu_index).rs_index = global_rs_index;
+    current_rs->assigned_fu = free_fu_index;
+    int execution_latency = get_latency_for_type(current_rs->fu_type);
+    fu_pool.at(free_fu_index).finish_cycle = current_cycle + execution_latency;
+    Event execute_event;
+    execute_event.timestamp = current_cycle + execution_latency;
+    execute_event.stage = Stage::EXECUTE;
+    execute_event.rs_index = global_rs_index;
+    event_queue.push(execute_event);
+}
+
+
+
+
 
 }
 }
