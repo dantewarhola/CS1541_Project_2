@@ -56,27 +56,27 @@ Core::Core(ComponentId_t id, Params& params):
 
 void Core::load_configuration(Params &params)
 {
-	config.integer_num     = params.find<int>("integer.number", 2);
-	config.integer_rs      = params.find<int>("integer.resnumber", 4);
+	config.integer_num = params.find<int>("integer.number", 2);
+	config.integer_rs = params.find<int>("integer.resnumber", 4);
 	config.integer_latency = params.find<int>("integer.latency", 1);
 
-	config.divider_num     = params.find<int>("divider.number", 1);
-	config.divider_rs      = params.find<int>("divider.resnumber", 2);
+	config.divider_num = params.find<int>("divider.number", 1);
+	config.divider_rs = params.find<int>("divider.resnumber", 2);
 	config.divider_latency = params.find<int>("divider.latency", 20);
 
-	config.multiplier_num     = params.find<int>("multiplier.number", 2);
-	config.multiplier_rs      = params.find<int>("multiplier.resnumber", 4);
+	config.multiplier_num = params.find<int>("multiplier.number", 2);
+	config.multiplier_rs = params.find<int>("multiplier.resnumber", 4);
 	config.multiplier_latency = params.find<int>("multiplier.latency", 10);
 
-	config.ls_num     = params.find<int>("ls.number", 1);
-	config.ls_rs      = params.find<int>("ls.resnumber", 8);
+	config.ls_num = params.find<int>("ls.number", 1);
+	config.ls_rs = params.find<int>("ls.resnumber", 8);
 	config.ls_latency = params.find<int>("ls.latency", 3);
 
 	// set up the global RS index offsets so every RS has a unique tag
 	int_rs_offset = 0;
 	div_rs_offset = config.integer_rs;
 	mul_rs_offset = div_rs_offset + config.divider_rs;
-	ls_rs_offset  = mul_rs_offset + config.multiplier_rs;
+	ls_rs_offset = mul_rs_offset + config.multiplier_rs;
 	total_rs_count = ls_rs_offset + config.ls_rs;
 
 	integer_rs.resize(config.integer_rs);
@@ -103,13 +103,11 @@ void Core::load_configuration(Params &params)
 	ls_fu.clear();
 }
 
-void Core::init(unsigned int phase)
-{
+void Core::init(unsigned int phase){
 	memory_wrapper->init(phase);
 }
 
-void Core::setup()
-{
+void Core::setup(){
 	output->output("Setting up.\n");
 	std::cout << "========== TOMASULO SIMULATOR ==========" << std::endl;
 
@@ -141,8 +139,7 @@ void Core::setup()
 	std::cout << "========================================" << std::endl;
 }
 
-void Core::finish()
-{
+void Core::finish(){
 	Json::Value root;
 
 	root["cycles"] = Json::UInt64(current_cycle);
@@ -198,8 +195,8 @@ void Core::finish()
 	std::cout << "Total reg reads: " << total_reg_reads << std::endl;
 }
 
-void Core::load_program(Params &params)
-{
+void Core::load_program(Params &params){
+    
 	std::string program_path = params.find<std::string>("program", "");
 	std::ifstream f(program_path);
 	if (!f.is_open()) {
