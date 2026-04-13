@@ -1,8 +1,8 @@
 # Implementation Notes & README
 
-### **Name: Dante Warhola**
+### **Names: Dante Warhola, Trystin DeRemer**
 
-### **Email: dlw110@pitt.edu**
+### **Emails: dlw110@pitt.edu, tcd27@pitt.edu**
 
 # **Document & Project Overview:**
 
@@ -224,6 +224,35 @@ TBD
 - SW was a cold miss (latency 1005 cycles to DRAM), LW was a cache hit (latency 2 cycles)
 - Total cycles dropped from 6031 without cache to 1022 with cache
 - Cache stats confirmed 1 hit and 1 miss which is correct for a SW followed by a LW to the same address
+
+## Phase 10: Statistics Output
+
+### 10.1 Implement finish():
+- Replaced the TODO in finish() with JSON output using the format from the spec
+- Builds a Json::Value with cycles, per-FU arrays (integer, multiplier, divider, ls) each with id and instruction count, reg reads, and stalls
+- Writes to the output file path passed in from the command line
+
+### 10.2 Test:
+- Ran with example_program.m and confirmed the output JSON has the correct format
+- Integer FU0 ran 3 instructions, FU1 ran 1, L/S ran 2, divider and multiplier ran 0
+- Cycles matched the 1022 from previous runs
+
+## Phase 11: End-to-End Testing & Cleanup
+
+### 11.1 Test traces:
+- test_int_heavy.m: integer-heavy trace with RAW dependency chains, tests dependency forwarding and multiple integer FUs
+- test_mixed_fu.m: uses multiplier, divider, and integer FUs together, tests that different FU types execute in parallel
+- test_ls_heavy.m: multiple SW and LW instructions, tests FIFO ordering and cache hit/miss behavior
+- test_rs_overflow.m: more instructions than available RSs, tests structural hazard stalls
+
+### 11.2 Configuration variants:
+- config_minimal.json: 1 integer FU, 2 RSs, small 256B cache, should produce more stalls and cache misses
+- config_wide.json: 4 integer FUs, 8 RSs, large 8KB 4-way cache, should produce fewer stalls
+- Compared results across configs to verify that more FUs reduces cycles and fewer RSs increases stalls
+
+### 11.3 Cleanup:
+- Cleaned up comments across all files
+- Verified all test traces run to completion without errors or hangs
 
 
 # Part 2: Tests & Bugs:
