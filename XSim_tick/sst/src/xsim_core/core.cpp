@@ -143,7 +143,55 @@ void Core::setup()
 
 void Core::finish()
 {
-	// TODO: Write output statistics JSON (Phase 10)
+	Json::Value root;
+
+	root["cycles"] = Json::UInt64(current_cycle);
+
+	// per-FU instruction counts
+	Json::Value int_array(Json::arrayValue);
+	for (int i = 0; i < (int)integer_fus.size(); i++){
+		Json::Value entry;
+		entry["id"] = i;
+		entry["instructions"] = Json::UInt64(integer_fus[i].instructions_executed);
+		int_array.append(entry);
+	}
+	root["integer"] = int_array;
+
+	Json::Value mul_array(Json::arrayValue);
+	for (int i = 0; i < (int)multiplier_fus.size(); i++){
+		Json::Value entry;
+		entry["id"] = i;
+		entry["instructions"] = Json::UInt64(multiplier_fus[i].instructions_executed);
+		mul_array.append(entry);
+	}
+	root["multiplier"] = mul_array;
+
+	Json::Value div_array(Json::arrayValue);
+	for (int i = 0; i < (int)divider_fus.size(); i++){
+		Json::Value entry;
+		entry["id"] = i;
+		entry["instructions"] = Json::UInt64(divider_fus[i].instructions_executed);
+		div_array.append(entry);
+	}
+	root["divider"] = div_array;
+
+	Json::Value ls_array(Json::arrayValue);
+	Json::Value ls_entry;
+	ls_entry["id"] = 0;
+	ls_entry["instructions"] = Json::UInt64(ls_fu.instructions_executed);
+	ls_array.append(ls_entry);
+	root["ls"] = ls_array;
+
+	root["reg reads"] = Json::UInt64(total_reg_reads);
+	root["stalls"] = Json::UInt64(total_stalls);
+
+	// write to output file
+	std::ofstream out(output_path);
+	Json::StreamWriterBuilder writer;
+	writer["indentation"] = "  ";
+	out << Json::writeString(writer, root);
+	out.close();
+
 	std::cout << "========== FINISHED SIMULATION ==========" << std::endl;
 	std::cout << "Total cycles: " << current_cycle << std::endl;
 	std::cout << "Total stalls: " << total_stalls << std::endl;
