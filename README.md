@@ -6,11 +6,9 @@
 
 # **Document & Project Overview:**
 
-TBD
+This project implements a simulation of dynamic instruction scheduling using Tomasulo's algorithm for the X ISA. The simulator accepts a hex encoded set of instructions, a JSON config file that specifies functional unit counts, reservation station counts, execution latencies, and cache parameters, and an output file path. It runs as an out of order execution through Issue, Read Operand, Execute, and Write Result. The simulator uses register renaming with a register alias table, a discrete event queue to schedule pipeline actions, and a FIFO-managed load/store unit for memory operations. It also integrates an L1 data cache and main memory using SST's memHierarchy components. Once all instructions are completed, it outputs a JSON stats file with the total cycle count, per-FU instruction counts, structural hazard stalls, and register file reads.
 
 # Part 1: Implementation Notes:
-
-TBD
 
 ## Phase 1: Add —configuration tag to command line
 
@@ -253,14 +251,3 @@ TBD
 ### 11.3 Cleanup:
 - Cleaned up comments across all files
 - Verified all test traces run to completion without errors or hangs
-
-
-# Part 2: Tests & Bugs:
-
-
-
-## Tests Completed:
-
-
-
-## Known Problems / Bugs:
