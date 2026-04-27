@@ -36,6 +36,7 @@ class Core: public SST::Component
 			COMPONENT_CATEGORY_PROCESSOR
 		)
 
+		// SST parameters that can be set from the config JSON
 		SST_ELI_DOCUMENT_PARAMS(
 			{ "verbose", "(uint) Verbosity for debugging.", "0" },
 			{ "clock_frequency", "(string) Sets the clock of the core in Hz", "0"} ,
@@ -74,11 +75,12 @@ class Core: public SST::Component
 		using TimeConverter = ::SST::TimeConverter;
 
 	public:
+		// SST lifecycle functions
 		Core(ComponentId_t id, Params& params);
 		virtual void init(unsigned int phase) override final;
-		virtual void setup() override final;
-		virtual void finish() override final;
-		bool tick(Cycle_t cycle);
+		virtual void setup() override final;   // prints config info at start
+		virtual void finish() override final;  // writes stats JSON at end
+		bool tick(Cycle_t cycle);              // called every clock cycle by SST
 
 	private:
 		Core();
@@ -87,19 +89,26 @@ class Core: public SST::Component
 		virtual ~Core() = default;
 
 	protected:
+		// loads the instruction trace from file
 		void load_program(Params &params);
+		// reads FU counts, RS counts, and latencies from JSON config
 		void load_configuration(Params &params);
 
+		// returns a pointer to an RS entry given its global index
 		ReservationStation* get_rs_by_global_index(int global_rs_index);
+		// returns the FU vector for a given FU type
 		std::vector<FunctionalUnit>& get_fus_for_type(FUType fu_type);
+		// returns the execution latency for a given FU type
 		int get_latency_for_type(FUType fu_type);
+		// checks if this instruction is the oldest ready one for its FU type
 		bool can_dispatch_oldest(int global_rs_index, FUType fu_type);
 
-		void handle_read_operand(int global_rs_index);
-		void handle_ls_read_operand(int global_rs_index);
-		void handle_execute(int global_rs_index);
-		void handle_write_result(int global_rs_index);
-		void handle_memory_response(int global_rs_index);
+		// pipeline stage handlers
+		void handle_read_operand(int global_rs_index);     // for integer/div/mul
+		void handle_ls_read_operand(int global_rs_index);  // for load/store (FIFO)
+		void handle_execute(int global_rs_index);           // execute completion
+		void handle_write_result(int global_rs_index);      // broadcast + free RS/FU
+		void handle_memory_response(int global_rs_index);   // placeholder for memory callbacks
 
 	private:
 		int verbose{0};
@@ -107,44 +116,54 @@ class Core: public SST::Component
 		std::string output_path{"statistics.json"};
 
 		Output *output{nullptr};
-		MemoryWrapper *memory_wrapper;
+		MemoryWrapper *memory_wrapper;   // handles read/write requests to SST memory
 		Statistics<uint64_t> *instruction_count;
 		TimeConverter* tc{nullptr};
 
+		// the instruction trace loaded from file
 		std::vector<uint16_t> program;
 
+		// parsed config values (FU counts, RS counts, latencies)
 		TomasuloConfig config;
 
+		// reservation station pools, one per FU type
 		std::vector<ReservationStation> integer_rs;
 		std::vector<ReservationStation> divider_rs;
 		std::vector<ReservationStation> multiplier_rs;
-		std::deque<ReservationStation> ls_rs;
+		std::deque<ReservationStation> ls_rs;  // FIFO queue for load/store
 
-		int int_rs_offset{0};
-		int div_rs_offset{0};
-		int mul_rs_offset{0};
-		int ls_rs_offset{0};
-		int total_rs_count{0};
+		// global RS index offsets so each RS has a unique tag for renaming
+		int int_rs_offset{0};    // integer RSs start at 0
+		int div_rs_offset{0};    // divider RSs start after integer
+		int mul_rs_offset{0};    // multiplier RSs start after divider
+		int ls_rs_offset{0};     // L/S RSs start after multiplier
+		int total_rs_count{0};   // total number of RS slots
 
+		// functional unit pools
 		std::vector<FunctionalUnit> integer_fus;
 		std::vector<FunctionalUnit> divider_fus;
 		std::vector<FunctionalUnit> multiplier_fus;
-		FunctionalUnit ls_fu;
+		FunctionalUnit ls_fu;  // single L/S unit
 
-		std::array<uint16_t, 8> registers;
-		std::array<RegisterStatus, 8> reg_status;
+		// architectural registers and register alias table
+		std::array<uint16_t, 8> registers;       // register values
+		std::array<RegisterStatus, 8> reg_status; // tag per register for renaming
 
+		// event queue sorted by timestamp (soonest first)
 		std::priority_queue<Event, std::vector<Event>, std::greater<Event>> event_queue;
 
-		int next_issue_index{0};
-		uint64_t current_cycle{0};
-		bool terminate{false};
-		bool memory_pending{false};
-		int memory_pending_rs{-1};
+		// pipeline tracking
+		int next_issue_index{0};       // next instruction to issue from trace
+		uint64_t current_cycle{0};     // current simulation cycle
+		bool terminate{false};         // set true when simulation is done
+		bool memory_pending{false};    // true while waiting on cache/DRAM response
+		int memory_pending_rs{-1};     // which RS is waiting on memory
 
-		uint64_t total_stalls{0};
-		uint64_t total_reg_reads{0};
+		// statistics counters
+		uint64_t total_stalls{0};      // structural hazard stalls at issue
+		uint64_t total_reg_reads{0};   // operands read from register file
 
+		// opcode name map for debug printing
 		std::map<uint32_t, std::string> names;
 };
 

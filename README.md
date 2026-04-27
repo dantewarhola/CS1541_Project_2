@@ -251,3 +251,54 @@ This project implements a simulation of dynamic instruction scheduling using Tom
 ### 11.3 Cleanup:
 - Cleaned up comments across all files
 - Verified all test traces run to completion without errors or hangs
+
+# Part 2: Tests & Bugs:
+
+## Tests Completed:
+- test_phase7.m — basic pipeline through all 4 stages (PASSED)
+- test2_phase7.m — RAW dependency chain (PASSED)
+- test_int_heavy.m — dependency chains with multiple integer FUs (PASSED)
+- test_mixed_fu.m — MUL, DIV, and integer FUs in parallel (PASSED)
+- test_ls_heavy.m — L/S FIFO ordering and cache hits/misses (PASSED)
+- test_rs_overflow.m (default) — RS overflow with enough hardware (PASSED)
+- test_rs_overflow.m (minimal) — RS overflow with constrained hardware, stalls correctly (PASSED)
+- test_rs_overflow.m (wide) — RS overflow with extra hardware, no stalls (PASSED)
+- example_program.m — full program with all instruction types (PASSED)
+
+## Known Problems / Bugs:
+- No known bugs
+- Phase 6 had a bug in can_dispatch_oldest that was fixed during development
+
+# Build & Run
+
+## Build:
+sh build.sh
+
+## Run:
+sst --add-lib-path build config.py -- --program example_program.m --configuration configuration.json --output stats.json
+
+# Files
+
+## Source Files:
+- sst/include/xsim_core/core.hpp — main simulator component header
+- sst/src/xsim_core/core.cpp — main simulator component implementation
+- sst/include/xsim_core/tomasulo.hpp — Tomasulo data structures and helpers
+- sst/include/xsim_core/opcodes.hpp — opcode definitions
+- sst/include/xsim_core/memory_wrapper.hpp — memory interface header
+- sst/src/xsim_core/memory_wrapper.cpp — memory interface implementation
+- config.py — SST simulation setup with L1 cache
+- CMakeLists.txt — build configuration
+
+## Configuration Files:
+- configuration.json — default config (2 int FUs, 4 RSs, 1 divider, 2 multipliers, 4096B direct-mapped cache)
+- config_minimal.json — constrained config (1 int FU, 2 RSs, 256B cache) to stress test stalls
+- config_wide.json — overpowered config (4 int FUs, 8 RSs, 8KB 4-way cache) to show no stalls
+
+## Test Traces:
+- example_program.m — full program with LIZ, SW, LW, PUT, HALT
+- test_phase7.m — basic pipeline test with 2 LIZ + HALT
+- test2_phase7.m — RAW dependency chain with ADD waiting on two LIZ
+- test_int_heavy.m — integer-heavy trace with dependency chains
+- test_mixed_fu.m — uses MUL, DIV, and integer FUs together
+- test_ls_heavy.m — multiple SW and LW to test FIFO and cache behavior
+- test_rs_overflow.m — more instructions than RSs to test structural hazard stalls
